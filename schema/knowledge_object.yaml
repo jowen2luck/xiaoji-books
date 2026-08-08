@@ -1,0 +1,120 @@
+# Knowledge Object Schema
+# 知识引擎的核心数据单元
+
+apiVersion: v1
+kind: KnowledgeObject
+
+# ─── 基础身份 ───────────────────────────────────
+id: string              # 全局唯一标识，格式 ko://{type}/{slug}
+  # 例: ko://concept/surplus-value
+       # ko://claim/capitalism-crisis-inevitable
+       # ko://person/karl-marx
+
+type: enum              # Concept | Claim | Person | Event
+
+title: string           # 标准名称
+aliases: string[]       # 别名列表（中英文、不同译法）
+  # 例: ["剩余价值", "Surplus Value", "Mehrwert"]
+
+summary: string         # 一段话定义/陈述（≤200字）
+
+# ─── 类型特定字段 ───────────────────────────────────
+definition: string      # [Concept] 正式定义
+description: string     # [Event] 事件描述
+birth_year: integer     # [Person] 出生年份
+death_year: integer     # [Person] 去世年份
+nationality: string     # [Person] 国籍
+
+#  Claim 特定
+negation_of: string     # [Claim] 否定了什么论断
+synthesis_of: string[]  # [Claim] 综合了哪些矛盾
+
+# ─── 关系 ───────────────────────────────────
+relations:
+  - target_id: string      # 指向另一个 KO 的 id
+    relation_type: enum    # 见下方关系类型表
+    strength: float        # 0-1 关系强度
+    note: string           # 补充说明（可选）
+
+# 关系类型 (relation_type)
+# ─────────────── 概念关系 ───────────────
+# Defines          定义
+# DependsOn        依赖（A 依赖 B 才能成立）
+# Explains         解释
+# IsA              是一种
+# PartOf           是...的一部分
+# ExampleOf        是...的例子
+# Prerequisite     前提
+# Opposes          对立
+# RelatedTo        相关（弱关系）
+# ─────────────── 论断关系 ───────────────
+# Supports         支持
+# Criticizes       批评
+# Develops         发展（在...基础上推进）
+# Contradicts      矛盾
+# Refutes          驳斥
+# EvidenceOf       是...的证据
+# ApplicationOf    是...的应用
+# ─────────────── 历史关系 ───────────────
+# HistoricalOrigin 历史来源
+# InfluencedBy     受影响
+# Influenced       影响了
+# PrecededBy       之前是...
+# SucceededBy      之后演变为...
+# ContemporaryWith 同时期
+# ─────────────── 人物/事件关系 ───────────────
+# AuthoredBy       由...提出
+# ParticipatedIn   参与了
+# OpposedBy        被...反对
+# LedTo            导致了
+# Witnessed        见证了
+
+# ─── 证据与出处（来自 Layer 1） ───────────────────────
+citations:
+  - book_id: string      # 文献 ID，ref://book/{slug}
+    title: string        # 书名（冗余存根）
+    author: string[]     # 作者
+    volume: string       # 卷号
+    chapter: string      # 章
+    section: string      # 节（可选）
+    page: string         # 页码
+    text: string         # 原文摘录（OCR 输出）
+    context: string      # 上下文（前后1-2段）
+    confidence: float    # OCR/抽取置信度
+    source_layer: enum   # archive | corpus
+
+# ─── 论元/争议 ───────────────────────────────────
+controversies:
+  - claim_id: string     # 对立观点的 Claim KO id
+    summary: string      # 争议焦点简述
+    resolution: string   # 现有结论（可选）
+
+evolution:
+  - period: string       # 时期标识（如 "1844手稿" "资本论第一卷"）
+    text: string         # 该时期的表述
+    citations: string[]  # 指向 citations 的索引
+
+# ─── 元数据 ───────────────────────────────────
+keywords: string[]       # 检索标签（多语言）
+importance: enum        # critical | major | minor
+domain: enum            # philosophy | economics | politics | history | culture | science
+language: string[]      # 涉及语言
+
+# ─── 向量索引（不替代知识结构） ───────────────────────
+embedding:
+  model: string          # 向量模型标识
+  vector: float[]        # 向量值
+  created_at: timestamp
+
+# ─── 元信息 ───────────────────────────────────
+created_at: timestamp
+updated_at: timestamp
+version: integer         # 版本号
+status: enum            # draft | verified | disputed | deprecated
+
+# ─── 数据来源追踪 ───────────────────────────────────
+provenance:
+  - layer: enum          # 从哪一层生成
+    script: string       # 处理脚本
+    timestamp: timestamp
+    input_refs: string[] # 输入的引用链

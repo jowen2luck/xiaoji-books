@@ -1,0 +1,73 @@
+# === 数据产物（体积大 / 可重建 / 不需入版本控制） ===
+
+# 原始 PDF 数据
+data/_kage/
+data/raw/
+
+# Evidence + 中间产物（流水线输出）
+data/evidence/
+data/catalog/
+data/navigation/
+data/index/
+data/corpus/
+data/archive/
+data/manifest*.jsonl
+data/manifest-*.json
+data/archive-index.json
+data/batch_checkpoint*.jsonl
+
+# 并行中间目录
+.data/
+.ocr_pilot/
+.parallel_shards/
+
+# SQLite 数据库
+*.db
+
+# === 日志 ===
+*.log
+detect-log.txt
+detection-stdout.txt
+pip-install-log.txt
+
+# === Python 缓存 ===
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# === Node / 前端 ===
+node_modules/
+
+# === IDE / 编辑器 ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS 垃圾 ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === CatPaw 本地状态 ===
+.catpaw/
+
+# === 知识图谱（用户派生分析，不进仓库） ===
+knowledge/
+
+# === 大文件（即使根目录也不要提交） ===
+*.pdf
+*.chm
+*.djvu
+*.zip
+*.7z
+*.tar.gz
+
+# === 例外：保留目录结构（空目录能被 git 追踪） ===
+!data/**/.gitkeep
+!.catpaw/
