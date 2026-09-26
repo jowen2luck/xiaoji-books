@@ -67,15 +67,20 @@ Agent (推理、总结、回答)
 | **P4** | Navigation 生成（摘要、概念候选） |
 | **P5** | 向量索引 + 语义检索 |
 
-## 设计文档
+## 设计、使用与评测文档
 
+- [BOOK_ASSISTANT_GUIDE.md](./docs/BOOK_ASSISTANT_GUIDE.md) — **图书助手 (Book Assistant) 客户端使用与架构指南**
+- [BENCHMARK_REPORT.md](./docs/BENCHMARK_REPORT.md) — **企业级知识库问答对比评测与量化报告（Baseline vs 简历版本实现）**
 - [SKILL.md](./SKILL.md) — Skill 详细规范（接口、约束、宪法遵守）
-- [REDESIGN.md](./REDESIGN.md) — 重构记录（为什么从"认知引擎"改为"Provider"）
+- [REDESIGN.md](./docs/architecture/REDESIGN.md) — 重构记录（为什么从"认知引擎"改为"Provider"）
 
-## 历史文档（仅供参考）
+## 历史架构文档（仅供参考）
 
-- [ARCHITECTURE_DESIGN_v2.md](./ARCHITECTURE_DESIGN_v2.md) — 旧版架构（已废弃，部分思路可参考）
-- [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) — 旧版实施计划（已废弃）
+- [ARCHITECTURE_DESIGN_v2.md](./docs/architecture/ARCHITECTURE_DESIGN_v2.md) — 旧版架构（已废弃，部分思路可参考）
+- [IMPLEMENTATION_PLAN.md](./docs/architecture/IMPLEMENTATION_PLAN.md) — 旧版实施计划（已废弃）
+- [AIAE_INTEGRATION.md](./docs/architecture/AIAE_INTEGRATION.md) — AIAE 契约规范
+- [STATUS.md](./docs/architecture/STATUS.md) — 历史里程碑状态跟踪
+- [verify-M0.md](./docs/verify-M0.md) — M0 产物验证报告
 
 ## 许可证
 

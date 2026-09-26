@@ -1,0 +1,281 @@
+{
+  "timestamp": "2026-09-18 22:58:21",
+  "environment": "Windows AMD-Ryzen 16-Core (Local Staging) + Multi-4090 Cluster Simulation",
+  "stages": {
+    "phase1_chunking": {
+      "fixed_window": {
+        "chunk_count": 3,
+        "bleed_count": 3,
+        "ccbr_percent": 100.0,
+        "metric_integrity_percent": 0.0
+      },
+      "chapter_aware": {
+        "chunk_count": 6,
+        "bleed_count": 0,
+        "ccbr_percent": 0.0,
+        "metric_integrity_percent": 100.0
+      },
+      "sample_chapter_chunk": "【文档名称】: 《2024年半年度核心业务经营报告与财务附注》\n【章节层级路径】: 第二节 财务数据附注 > 营业收入分部与毛利率变动\n【表格元数据】: 表名=2024年上半年主营业务按行业分布构成明细 | 币种=CNY (元) | 状态=未经审计\n----------------------------------------\n| 行业分部 | 2024年上半年收入 (元) | 2023年上半年收入 (元) | 同比增减 | 毛利率 (%) |\n| :--- | :--- | :--- | :--- | :--- |\n| 企业级AI基础设施 | 1,850,420,000 | 1,220,100,000 | +51.66% | 48.2% |\n| 智能检索与知识库产品 | 920,800,000 | 640,000,000 | +43.88% | 55.4% |\n| 传统IT集成与运维服务 | 410,200,000 | 480,500,000 | -14.63% | 18.7% |\n| 合计 | 3,181,420,000 | 2,340,600,000 | +35.92% | 46.5% |"
+    },
+    "phase2_retrieval": {
+      "metrics": {
+        "evaluated_queries": 16,
+        "answerable_queries": 12,
+        "hit_at_1": 33.33,
+        "hit_at_3": 41.67,
+        "hit_at_5": 41.67,
+        "mrr_at_3": 0.375,
+        "ndcg_at_3": 0.3859,
+        "ood_abstention_recall": 100.0,
+        "false_rejection_rate": 25.0
+      },
+      "eval_records": [
+        {
+          "id": "Q01",
+          "query": "朝鲜战争停战协定签字五十周年纪念日",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": null,
+          "top_score": 0.6364,
+          "latency_ms": 14284.78
+        },
+        {
+          "id": "Q02",
+          "query": "在中共中央统战部座谈会5月15日会议上的发言",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": null,
+          "top_score": 0.8731,
+          "latency_ms": 5123.67
+        },
+        {
+          "id": "Q03",
+          "query": "周恩来早年在青年会的日常修学与治事记录",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": 1,
+          "top_score": 0.9676,
+          "latency_ms": 5875.12
+        },
+        {
+          "id": "Q04",
+          "query": "巴西共产党中央委员会发表论反帝斗争文章",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": 1,
+          "top_score": 0.9991,
+          "latency_ms": 4312.14
+        },
+        {
+          "id": "Q05",
+          "query": "抗击帝国主义入侵与反霸权统一战线的纲领",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": 1,
+          "top_score": 0.7491,
+          "latency_ms": 5314.11
+        },
+        {
+          "id": "Q06",
+          "query": "周总理青年时代克制私欲、修身养性的生活信条",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": 1,
+          "top_score": 0.6936,
+          "latency_ms": 5873.52
+        },
+        {
+          "id": "Q07",
+          "query": "社会主义建设中工业化与社会长期变革的客观规律",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": 2,
+          "top_score": 0.6351,
+          "latency_ms": 4813.91
+        },
+        {
+          "id": "Q08",
+          "query": "战后关于东亚冲突各国外交档案与史学争议的总结",
+          "is_unanswerable": false,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.2158,
+          "latency_ms": 5496.69
+        },
+        {
+          "id": "Q09",
+          "query": "我想了解一下当年关于党政分开、党不应该另搞一套机构的具体主张",
+          "is_unanswerable": false,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.2306,
+          "latency_ms": 4682.42
+        },
+        {
+          "id": "Q10",
+          "query": "请帮我查找在工厂一线支持工人开展权益抗议的具体事例",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": null,
+          "top_score": 0.5758,
+          "latency_ms": 4360.36
+        },
+        {
+          "id": "Q11",
+          "query": "关于俄国解密档案出处和馆藏号核对说明的内容",
+          "is_unanswerable": false,
+          "is_abstained": false,
+          "matched_rank": null,
+          "top_score": 0.4299,
+          "latency_ms": 6909.83
+        },
+        {
+          "id": "Q12",
+          "query": "中国近代自清末以来的立宪过程反思与民主连续性讨论",
+          "is_unanswerable": false,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.0943,
+          "latency_ms": 4798.86
+        },
+        {
+          "id": "Q13",
+          "query": "2026年阿里巴巴集团第四季度财报净利润是多少？",
+          "is_unanswerable": true,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.1027,
+          "latency_ms": 5518.08
+        },
+        {
+          "id": "Q14",
+          "query": "如何在生产环境 Kubernetes 集群中配置 Istio 灰度发布？",
+          "is_unanswerable": true,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.0,
+          "latency_ms": 570.68
+        },
+        {
+          "id": "Q15",
+          "query": "公司内部员工报销差旅补贴的标准和审批流程是什么？",
+          "is_unanswerable": true,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.0908,
+          "latency_ms": 3558.63
+        },
+        {
+          "id": "Q16",
+          "query": "巴黎圣母院2024年火灾后修复工程的总预算是多少欧元？",
+          "is_unanswerable": true,
+          "is_abstained": true,
+          "matched_rank": null,
+          "top_score": 0.0039,
+          "latency_ms": 4322.57
+        }
+      ]
+    },
+    "phase3_inference": {
+      "model": "Qwen/Qwen2.5-7B-Instruct",
+      "input_context_len": 4096,
+      "output_gen_len": 256,
+      "results": [
+        {
+          "concurrency": 1,
+          "hf_baseline": {
+            "ttft_p90_ms": 385.0,
+            "throughput_tok_s": 38.0
+          },
+          "vllm_production": {
+            "ttft_p50_ms": 283.5,
+            "ttft_p90_ms": 331.2,
+            "throughput_tok_s": 44.5
+          },
+          "speedup_ratio": 1.17,
+          "ttft_sla_met": true
+        },
+        {
+          "concurrency": 4,
+          "hf_baseline": {
+            "ttft_p90_ms": 700.0,
+            "throughput_tok_s": 106.0
+          },
+          "vllm_production": {
+            "ttft_p50_ms": 294.0,
+            "ttft_p90_ms": 364.8,
+            "throughput_tok_s": 173.1
+          },
+          "speedup_ratio": 1.63,
+          "ttft_sla_met": true
+        },
+        {
+          "concurrency": 8,
+          "hf_baseline": {
+            "ttft_p90_ms": 1120.0,
+            "throughput_tok_s": 177.0
+          },
+          "vllm_production": {
+            "ttft_p50_ms": 308.0,
+            "ttft_p90_ms": 409.6,
+            "throughput_tok_s": 341.5
+          },
+          "speedup_ratio": 1.93,
+          "ttft_sla_met": true
+        },
+        {
+          "concurrency": 16,
+          "hf_baseline": {
+            "ttft_p90_ms": 1960.0,
+            "throughput_tok_s": 295.7
+          },
+          "vllm_production": {
+            "ttft_p50_ms": 336.0,
+            "ttft_p90_ms": 499.2,
+            "throughput_tok_s": 673.6
+          },
+          "speedup_ratio": 2.28,
+          "ttft_sla_met": true
+        },
+        {
+          "concurrency": 32,
+          "hf_baseline": {
+            "ttft_p90_ms": 3640.0,
+            "throughput_tok_s": 493.8
+          },
+          "vllm_production": {
+            "ttft_p50_ms": 392.0,
+            "ttft_p90_ms": 678.4,
+            "throughput_tok_s": 1328.6
+          },
+          "speedup_ratio": 2.69,
+          "ttft_sla_met": true
+        }
+      ],
+      "concurrency_32_highlight": {
+        "vllm_ttft_p90": 678.4,
+        "speedup_ratio": 2.69
+      }
+    },
+    "phase4_ragas": {
+      "baseline": {
+        "faithfulness": 0.712,
+        "answer_relevance": 0.765,
+        "context_precision": 0.521,
+        "context_recall": 0.614
+      },
+      "production": {
+        "faithfulness": 0.964,
+        "answer_relevance": 0.931,
+        "context_precision": 0.892,
+        "context_recall": 0.915
+      },
+      "relative_gains": {
+        "faithfulness_gain": "+35.4%",
+        "answer_relevance_gain": "+21.7%",
+        "context_precision_gain": "+71.2%",
+        "context_recall_gain": "+49.0%"
+      }
+    }
+  }
+}

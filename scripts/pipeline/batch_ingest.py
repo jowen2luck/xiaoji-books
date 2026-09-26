@@ -125,6 +125,8 @@ def make_parser():
     parser.add_argument("--checkpoint", default="data/batch_checkpoint.jsonl")
     parser.add_argument("--max-pages-per-book", type=int, default=None,
                        help="Cap pages processed per book (for testing)")
+    parser.add_argument("--onnx-threads", type=int, default=2,
+                       help="ONNX intra-op threads per sub-engine (default 2, safe for 4 parallel workers)")
     parser.add_argument("--no-resume", action="store_true",
                        help="Ignore checkpoint, reprocess everything")
     parser.add_argument("--dry-run", action="store_true")
@@ -160,6 +162,7 @@ def main():
     pages_path = out_dir / "pages.jsonl"
     paragraphs_path = out_dir / "paragraphs.jsonl"
     books_path = out_dir / "books.jsonl"
+    blocks_path = out_dir / "blocks.jsonl"
 
     # Load checkpoint: track (book_id, evidence_set_id) pairs + book_id-only set
     # Same book_id + same evidence_set_id = skip; different evidence_set_id = re-ingest (new version)
@@ -196,19 +199,30 @@ def main():
         pdf_path = resolve_pdf_path(record, args.base_dir)
 
         # Compute pre-emptive evidence_set_id for checkpoint skip check
-        # (must match what _write_evidence computes)
-        extraction_meta_pending = {}
+        # Must match the version string used in _write_evidence / anchor_builder:
+        #   pdfplumber@0.11.10:norm_v1  or  rapidocr_onnxruntime@1.4.0:norm_v1
         if status in ("text_extractable", "partial_text"):
-            extractor_sig = "pdfplumber"  # simplified; real sig derived in _write_evidence
+            try:
+                import pdfplumber
+                _v = pdfplumber.__version__
+            except Exception:
+                _v = "0.0"
+            extractor_ver = f"pdfplumber@{_v}"
         elif status == "ocr_required":
-            extractor_sig = "rapidocr_onnxruntime"
+            try:
+                import rapidocr_onnxruntime
+                _v = getattr(rapidocr_onnxruntime, "__version__", "1.4.0")
+            except Exception:
+                _v = "1.4.0"
+            extractor_ver = f"rapidocr_onnxruntime@{_v}"
         else:
-            extractor_sig = "unknown"
+            extractor_ver = "unknown"
         pre_evidence_set_id = ""
         if book_id and artifact_id:
-            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            if "anchor_builder" not in sys.modules:
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
             from anchor_builder import make_evidence_set_id
-            pre_evidence_set_id = make_evidence_set_id(book_id, artifact_id, f"{extractor_sig}:norm_v1")
+            pre_evidence_set_id = make_evidence_set_id(book_id, artifact_id, f"{extractor_ver}:norm_v1")
 
         # Skip already ingested books.  Primary: exact (book_id, evidence_set_id)
         # match (supports re-ingest when extractor_version changes).  Fallback:
@@ -249,9 +263,10 @@ def main():
             result = _process_one_book(
                 pdf_path, book_id, artifact_id, status, record,
                 args.dpi, args.poppler_path, args.max_pages_per_book,
+                onnx_threads=args.onnx_threads,
             )
             # Write Evidence records (returns evidence_set_id + row counts)
-            write_info = _write_evidence(result, books_path, pages_path, paragraphs_path)
+            write_info = _write_evidence(result, books_path, pages_path, paragraphs_path, blocks_path)
 
             append_checkpoint(args.checkpoint, {
                 "book_id": book_id,
@@ -290,7 +305,7 @@ def main():
     print(f"Checkpoint: {args.checkpoint}", file=sys.stderr)
 
 
-def _process_one_book(pdf_path, book_id, artifact_id, status, record, dpi, poppler_path, max_pages):
+def _process_one_book(pdf_path, book_id, artifact_id, status, record, dpi, poppler_path, max_pages, return_blocks=True, onnx_threads=2):
     """Dispatch to the right pipeline for one book. book_id always from manifest, never stem-derived."""
     if status in ("text_extractable", "partial_text"):
         from text_extract import extract_pdf_text
@@ -311,6 +326,8 @@ def _process_one_book(pdf_path, book_id, artifact_id, status, record, dpi, poppl
             dpi=dpi,
             max_pages=max_pages,
             poppler_path=poppler_path,
+            return_blocks=return_blocks,
+            onnx_threads=onnx_threads,
         )
     elif status == "parser_error":
         # Try OCR anyway — maybe it's just pdfplumber failing
@@ -321,14 +338,84 @@ def _process_one_book(pdf_path, book_id, artifact_id, status, record, dpi, poppl
             dpi=dpi,
             max_pages=max_pages,
             poppler_path=poppler_path,
+            return_blocks=return_blocks,
+            onnx_threads=onnx_threads,
         )
     else:
         raise ValueError(f"Unknown status: {status}")
 
 
-def _write_evidence(result, books_path, pages_path, paragraphs_path):
+def _split_paragraphs_geometry(blocks: list, text: str) -> list:
+    """Split page text into paragraphs using block Y-coordinate gaps.
+
+    Returns list of (char_start, char_end, para_text) tuples.
+    Each block's char offset is approximated by its position in the text.
+    """
+    if not blocks or not text:
+        return []
+    # Build per-block char offsets by walking the text
+    char_cursor = 0
+    block_spans = []
+    for blk in blocks:
+        blk_text = blk.get("text", "")
+        # Find this block's text in the normalized text starting from cursor
+        idx = text.find(blk_text, char_cursor)
+        if idx < 0:
+            idx = char_cursor
+        block_spans.append((idx, idx + len(blk_text), blk))
+        char_cursor = idx + len(blk_text)
+
+    # Compute Y-coordinate gaps between consecutive blocks
+    # box format: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]] — use top-y (y1) metric
+    def block_top(blk):
+        box = blk.get("box")
+        if box and len(box) >= 2:
+            return float(box[0][1])
+        return 0.0
+    def block_bottom(blk):
+        box = blk.get("box")
+        if box and len(box) >= 3:
+            return float(box[2][1])
+        return 0.0
+
+    # Compute line heights and gaps
+    heights = []
+    for blk in blocks:
+        h = block_bottom(blk) - block_top(blk)
+        if h > 0:
+            heights.append(h)
+    if not heights:
+        return []
+    median_h = sorted(heights)[len(heights) // 2]
+    para_gap = median_h * 1.8
+
+    # Build paragraphs by grouping blocks with small Y gaps
+    paragraphs = []
+    para_start = 0
+    prev_bottom = block_bottom(blocks[0])
+    for i in range(1, len(blocks)):
+        curr_top = block_top(blocks[i])
+        gap = curr_top - prev_bottom
+        if gap >= para_gap:
+            # Emit paragraph [para_start, span_end)
+            end_pos = block_spans[i - 1][1]
+            para_text = text[para_start:end_pos].strip()
+            if len(para_text) >= 10:
+                paragraphs.append((para_start, end_pos, para_text))
+            para_start = block_spans[i][0] if i < len(block_spans) else end_pos
+        prev_bottom = max(prev_bottom, block_bottom(blocks[i]))
+
+    # Final paragraph
+    if para_start < len(text):
+        para = text[para_start:].strip()
+        if len(para) >= 10:
+            paragraphs.append((para_start, len(text), para))
+    return paragraphs
+
+
+def _write_evidence(result, books_path, pages_path, paragraphs_path, blocks_path=None):
     """Convert extraction result to Evidence JSONL using anchor_builder.
-    
+
     Returns dict with write info:
       - evidence_set_id
       - extractor_sig
@@ -340,7 +427,7 @@ def _write_evidence(result, books_path, pages_path, paragraphs_path):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from anchor_builder import (
         build_page_anchor, build_paragraph_anchor,
-        make_evidence_set_id, compute_page_confidence,
+        make_evidence_set_id, compute_page_confidence, classify_block,
     )
 
     book_id = result.get("book_id", "")
@@ -375,7 +462,7 @@ def _write_evidence(result, books_path, pages_path, paragraphs_path):
     n_pages = 0
     n_paras = 0
 
-    # --- Pages + Paragraphs ---
+    # --- Pages + Paragraphs + Blocks ---
     for page in result.get("pages", []):
         page_idx = page["page_index"]
         text_raw = page.get("text_raw", "")
@@ -400,27 +487,50 @@ def _write_evidence(result, books_path, pages_path, paragraphs_path):
         append_jsonl(pages_path, page_anchor)
         n_pages += 1
 
-        # Paragraph-level evidence — split normalized text by blank lines
+        # ── blocks.jsonl (bbox + confidence per block) ──────────────────────
+        if blocks_path:
+            for bi, blk in enumerate(page.get("blocks", [])):
+                append_jsonl(blocks_path, {
+                    "id": f"{book_id}:p{page_idx}:b{bi}:{evidence_set_id}",
+                    "type": "block",
+                    "book_id": book_id,
+                    "artifact_id": artifact_id,
+                    "source_hash": source_hash,
+                    "page_index": page_idx,
+                    "block_index": bi,
+                    "text_raw": blk.get("text", ""),
+                    "confidence": blk.get("confidence", 0.0),
+                    "box": blk.get("box"),
+                    "extractor": page.get("extractor", "unknown"),
+                    "extractor_version": page.get("extractor_version", "unknown"),
+                    "evidence_set_id": evidence_set_id,
+                    "ingested_at": now_iso(),
+                })
+
+        # ── Paragraph-level evidence — geometry-based splitting ─────────────
+        # Uses block Y-coordinate gaps to detect paragraph breaks.
+        # Heuristic gap: ≥ 1.8× median line height within the page.
         if text_normalized:
-            paragraphs = text_normalized.split("\n\n")
-            char_offset = 0
+            page_blocks = page.get("blocks", [])
+            paragraphs = _split_paragraphs_geometry(page_blocks, text_normalized)
+            # Fallback: single paragraph if no geometry available
+            if not paragraphs:
+                paragraphs = [(0, len(text_normalized), text_normalized)]
+
             para_idx = 0
-            for para_text in paragraphs:
+            for (c_start, c_end, para_text) in paragraphs:
                 para_text_stripped = para_text.strip()
                 if len(para_text_stripped) < 10:
-                    char_offset += len(para_text) + 2
                     continue
-                # Extract matching raw (best effort)
-                raw_chunk = text_raw[char_offset:char_offset + len(para_text)] if char_offset < len(text_raw) else para_text_stripped
-
+                raw_chunk = text_raw[c_start:c_end] if c_end <= len(text_raw) else para_text_stripped
                 para_anchor = build_paragraph_anchor(
                     book_id=book_id,
                     artifact_id=artifact_id,
                     source_hash=source_hash,
                     page_index=page_idx,
                     para_index=para_idx,
-                    char_start=char_offset,
-                    char_end=char_offset + len(para_text),
+                    char_start=c_start,
+                    char_end=c_end,
                     evidence_set_id=evidence_set_id,
                     page_id=page_anchor["id"],
                     text_raw=raw_chunk,
@@ -433,8 +543,6 @@ def _write_evidence(result, books_path, pages_path, paragraphs_path):
                 )
                 append_jsonl(paragraphs_path, para_anchor)
                 n_paras += 1
-
-                char_offset += len(para_text) + 2
                 para_idx += 1
 
     return {

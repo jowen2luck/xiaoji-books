@@ -1,0 +1,11 @@
+CXX = /data/data/com.termux/files/usr/bin/clang++
+CXXFLAGS = -g -Wall -Wno-unused-parameter -fno-rtti -fno-exceptions -std=c++11 -fvisibility=hidden -pipe -O2 -DNDEBUG -DNINJA_PYTHON=\"python3\" -DNINJA_HAVE_BROWSE -I.
+SRC = $(filter-out %_test.cc %_perftest.cc %-win32.cc %-mingw.cc,$(wildcard src/*.cc))
+OBJ = $(SRC:.cc=.o)
+
+ninja: $(OBJ)
+	$(CXX) -o $@ $^
+
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+

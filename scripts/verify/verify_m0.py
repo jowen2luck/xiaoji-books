@@ -158,7 +158,7 @@ def main():
     parser.add_argument("--detection", default="data/manifest-detection.jsonl")
     parser.add_argument("--samples", default="data/manifest-samples.json")
     parser.add_argument("--evidence", default="data/evidence/")
-    parser.add_argument("--output", default="verify-M0.md",
+    parser.add_argument("--output", default="docs/verify-M0.md",
                         help="Output verification report")
     
     args = parser.parse_args()

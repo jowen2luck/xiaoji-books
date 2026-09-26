@@ -1,0 +1,34 @@
+{
+  "name": "book-assistant-vue",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "图书助手 (Book Assistant) - 智能书籍研读、分类标签与证据溯源伴读平台",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "postbuild": "node -e \"const fs=require('fs'); if(fs.existsSync('out/preload/index.mjs')) fs.copyFileSync('out/preload/index.mjs', 'out/preload/index.js');\"",
+    "start": "electron-vite preview",
+    "ingest:processed": "node scripts/run_ingest.js"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@vicons/ionicons5": "^0.13.0",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.4.7",
+    "echarts": "^5.5.1",
+    "highlight.js": "^11.10.0",
+    "marked": "^14.1.2",
+    "naive-ui": "^2.40.1",
+    "vue": "^3.5.12",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "electron": "^38.1.2",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "vite": "^5.4.10"
+  }
+}

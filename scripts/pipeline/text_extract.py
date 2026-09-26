@@ -149,52 +149,130 @@ def extract_page_text(pdf_path: str, page_index: int) -> tuple:
 def ocr_page(pdf_path: str, page_index: int, dpi: int = 200, poppler_path: str = None) -> tuple:
     """OCR a single PDF page using RapidOCR.
 
+    Rendering priority:
+      1. PyMuPDF (fitz) — no external poppler needed
+      2. pdf2image + poppler fallback (when poppler_path is given)
+
     Returns (text, avg_confidence, block_count).
     """
-    from pdf2image import convert_from_path
-    from PIL import Image
-
     engine = _get_ocr_engine()
-    
-    # page_num is 1-indexed for pdf2image
-    page_num = page_index + 1
-    kwargs = dict(
-        first_page=page_num,
-        last_page=page_num,
-        dpi=dpi,
-    )
-    if poppler_path:
-        kwargs["poppler_path"] = poppler_path
-    
-    images = convert_from_path(pdf_path, **kwargs)
-    if not images:
-        return "", 0.0, 0
-    
-    result, elapse = engine(images[0])
-    
+
+    # Try PyMuPDF rendering first (no poppler dependency)
+    image = _render_page_pymupdf(pdf_path, page_index, dpi)
+
+    if image is None:
+        # Fallback to pdf2image if poppler available
+        try:
+            from pdf2image import convert_from_path
+            page_num = page_index + 1
+            kwargs = dict(first_page=page_num, last_page=page_num, dpi=dpi)
+            if poppler_path:
+                kwargs["poppler_path"] = poppler_path
+            images = convert_from_path(pdf_path, **kwargs)
+            if not images:
+                return "", 0.0, 0
+            image = images[0]
+        except Exception:
+            return "", 0.0, 0
+
+    result, elapse = engine(image)
+
     if not result:
         return "", 0.0, 0
-    
+
     texts = []
     confs = []
     for line in result:
         if len(line) >= 3:
             texts.append(line[1])
             confs.append(line[2])
-    
+
     text = "\n".join(texts)
     avg_conf = sum(confs) / len(confs) if confs else 0.0
     return text.strip(), round(avg_conf, 4), len(texts)
 
 
+def _render_page_pymupdf(pdf_path: str, page_index: int, dpi: int = 200):
+    """Render a PDF page to PIL Image using PyMuPDF (no poppler needed)."""
+    try:
+        from PIL import Image
+        doc = fitz.open(pdf_path)
+        if page_index >= doc.page_count:
+            doc.close()
+            return None
+        page = doc.load_page(page_index)
+        # Scale factor: PDF base DPI is 72, so scale = dpi / 72
+        scale = dpi / 72.0
+        mat = fitz.Matrix(scale, scale)
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        doc.close()
+        return img
+    except Exception:
+        return None
+
+
+_LABEL_PATTERNS = None
+
+def _get_label_patterns():
+    """Compiled regex patterns for label-only lines (cached)."""
+    global _LABEL_PATTERNS
+    if _LABEL_PATTERNS is None:
+        import re
+        _LABEL_PATTERNS = [
+            re.compile(r'^\s*[\w\-]+\s*$'),               # single identifier
+            re.compile(r'^\s*\d+\s*$'),                   # just a page number
+            re.compile(r'^\s*第\s*\d+\s*页?\s*$'),        # "第X页"
+            re.compile(r'^\s*Page\s+\d+\s*$', re.I),     # "Page X"
+            re.compile(r'^\s*www\.\S+\s*$'),             # URL
+            re.compile(r'^\s*https?://\S+\s*$'),         # URL
+            re.compile(r'^\s*[\u4e00-\u9fff]\s*$'),      # single CJK char
+        ]
+    return _LABEL_PATTERNS
+
+
+def _count_meaningful_lines(text: str) -> int:
+    """Count lines with actual content (skip labels/numbers/URLs)."""
+    patterns = _get_label_patterns()
+    meaningful = 0
+    for line in text.split('\n'):
+        s = line.strip()
+        if not s or len(s) < 5:
+            continue
+        if any(p.match(s) for p in patterns):
+            continue
+        meaningful += 1
+    return meaningful
+
+
 def is_page_text_sufficient(text: str, min_chars: int = 50) -> bool:
-    """Heuristic: does the extracted text contain enough readable content?"""
-    if not text:
-        return False
-    # Count CJK + Latin word characters (collapse whitespace)
+    """Smart heuristic: does extracted text contain meaningful content?
+
+    Uses multi-factor content quality scoring instead of simple char count.
+    Requires: CJK chars >= 30 OR meaningful_lines >= 3 with avg_line_len >= 15.
+    """
     import re
-    chars = re.findall(r'[\u4e00-\u9fff\w]', text)
-    return len(chars) >= min_chars
+    if not text or not text.strip():
+        return False
+
+    total_chars = len(text.strip())
+    cjk_chars = len(re.findall(r'[\u4e00-\u9fff\u3400-\u4dbf]', text))
+    lines = [l for l in text.split('\n') if l.strip()]
+    meaningful_lines = _count_meaningful_lines(text)
+    avg_line_len = total_chars / max(len(lines), 1)
+
+    # Weighted score (matches diagnose_content_quality.py logic)
+    score = 0.0
+    score += min(cjk_chars / 30.0, 3.0) * 2.0
+    score += min(total_chars / 80.0, 3.0) * 1.0
+    score += min(meaningful_lines / 3.0, 3.0) * 1.5
+    score += min(avg_line_len / 15.0, 2.0) * 0.5
+
+    if score < 0:
+        score = 0.0
+
+    # Accept if score >= 3.0 AND has either CJK content or multiple meaningful lines
+    return score >= 3.0 and (cjk_chars >= 30 or (meaningful_lines >= 3 and avg_line_len >= 15))
 
 
 def extract_pdf_text(
