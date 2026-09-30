@@ -94,6 +94,28 @@ export default class BookCatalogRepository {
       console.warn('[BookCatalogRepository] Error querying valid paragraphs count:', e.message)
     }
 
+    // 段落切分质量统计：区分「正常按段落切分」与「退化成整页一条」
+    // 抽取阶段未保留版面信息（无空行/无缩进/无 bbox），大量书退化为每页 1 条记录，
+    // 这里统计单段页占比供 UI 诚实标注，避免把退化数据伪装成「精读段落」。
+    const segStatsMap = new Map()
+    try {
+      const segRows = this.db.prepare(`
+        SELECT book_id,
+               COUNT(*) AS page_count,
+               SUM(CASE WHEN n = 1 THEN 1 ELSE 0 END) AS single_page_count
+        FROM (
+          SELECT book_id, page_index, COUNT(*) AS n
+          FROM paragraphs
+          WHERE text_normalized NOT LIKE '%pdfFactory%' AND text_normalized NOT LIKE '%fineprint%'
+          GROUP BY book_id, page_index
+        )
+        GROUP BY book_id
+      `).all()
+      segRows.forEach(r => segStatsMap.set(r.book_id, r))
+    } catch (e) {
+      console.warn('[BookCatalogRepository] Error querying segmentation stats:', e.message)
+    }
+
     return rows.map(row => {
       // 友好书名推断
       let title = row.title
@@ -126,6 +148,21 @@ export default class BookCatalogRepository {
 
       const validParagraphsCount = validCountMap.get(row.book_id) || 0
 
+      // 段落切分质量：avgParasPerPage 越低说明退化越严重
+      const seg = segStatsMap.get(row.book_id)
+      const indexedPages = seg?.page_count || 0
+      const singlePages = seg?.single_page_count || 0
+      const avgParasPerPage = indexedPages > 0
+        ? Math.round((validParagraphsCount / indexedPages) * 10) / 10
+        : 0
+      const singlePageRatio = indexedPages > 0
+        ? Math.round((singlePages / indexedPages) * 100) / 100
+        : 1
+      // quality: 'ok' 正常切分 | 'warn' 偏粗 | 'coarse' 退化为整页一条
+      const segmentationQuality = !indexedPages || avgParasPerPage < 1.2
+        ? 'coarse'
+        : (avgParasPerPage < 3 ? 'warn' : 'ok')
+
       return {
         id: row.book_id,
         artifactId: row.artifact_id,
@@ -138,6 +175,10 @@ export default class BookCatalogRepository {
         tags,
         status: row.status || 'active',
         validParagraphsCount,
+        indexedPages,
+        avgParasPerPage,
+        singlePageRatio,
+        segmentationQuality,
         ingestedAt: row.ingestedAt || '2026-09-01'
       }
     }).filter(b => {

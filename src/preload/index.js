@@ -8,6 +8,8 @@ const api = {
   getParagraphContext: (payload) => ipcRenderer.invoke('books:get-context', payload),
   getBookParagraphs: (payload) => ipcRenderer.invoke('books:paragraphs', payload),
   syncProcessedBooks: (opts) => ipcRenderer.invoke('books:sync-processed', opts),
+  getBookTierStatus: (bookId) => ipcRenderer.invoke('books:tier-status', bookId),
+  triggerBookBackfill: (bookId) => ipcRenderer.invoke('books:trigger-backfill', bookId),
 
   // 问答伴读
   askInquiry: (payload) => ipcRenderer.invoke('inquiry:ask', payload),

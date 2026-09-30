@@ -64,4 +64,23 @@ export function registerBookHandlers() {
       return { success: false, error: err.message }
     }
   })
+
+  // 7. 获取图书数据资产分级 (Tier 1/2 vs Tier 3)
+  ipcMain.handle('books:tier-status', async (_event, bookId) => {
+    try {
+      return { success: true, data: await bookService.getBookTierStatus(bookId) }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
+
+  // 8. 显式触发按需高保真回填
+  ipcMain.handle('books:trigger-backfill', async (_event, bookId) => {
+    try {
+      bookService.triggerOnDemandBackfill(bookId)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err.message }
+    }
+  })
 }

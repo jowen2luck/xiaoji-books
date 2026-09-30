@@ -47,7 +47,7 @@ export default class InquiryService {
     // 1. 获取或创建持久化会话
     let session = sessionId ? this.sessionManager.getSession(sessionId) : null
     if (!session) {
-      session = this.sessionManager.createSession({ scope })
+      session = this.sessionManager.createSession(question, scope)
     }
 
     // 记录用户消息
@@ -122,8 +122,8 @@ export default class InquiryService {
     return this.sessionManager.getSession(sessionId)
   }
 
-  createSession(payload) {
-    return this.sessionManager.createSession(payload)
+  createSession(question, scope = {}) {
+    return this.sessionManager.createSession(question, scope)
   }
 
   renameSession(id, title) {

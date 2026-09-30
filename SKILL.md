@@ -139,6 +139,20 @@ previous_set_id: str | null  # 上一版（reingest 时填写）
 
 以上禁止操作可在 Navigation 层生成派生字段（`paragraph_derived`、`semantic_chunk`、`page_header_detected`），并保留 `input_refs` 和生成器版本。
 
+### 3.1.3 OCR 与版面结构化标准 (Layout & OCR Standard)
+
+全量扫描件与双栏书籍的 OCR 及版面恢复统一遵循 [`docs/OCR_AND_LAYOUT_SPECIFICATION.md`](docs/OCR_AND_LAYOUT_SPECIFICATION.md)：
+
+1. **引擎统一**: 统一采用 `RapidOCR (PP-OCRv4 CPU ONNX)` + `PyMuPDF (fitz)` 内存光栅化，废弃易崩溃且路径写死的 Paddle oneDNN / 手机端集群丢弃坐标方案。
+2. **Ground Truth 严禁丢弃物理坐标**: 每一文本行必须保留 4 点物理坐标 `[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]` 及置信度。
+3. **版面多栏与通栏断点切带 (LayoutAnalyzer)**:
+   - 多栏页面严禁简单按检测顺序拼接，必须经过 `LayoutAnalyzer` 进行通栏大标题切带（Span-Banding）与自适应列间距分析（Gutter Detection），按“左栏自顶向下→右栏自顶向下”还原真实书籍阅读流。
+4. **多级标题元信息绑定**:
+   - 结合几何字号突变与语义正则，提取 Level 1（卷/编/册/部）、Level 2（章/独立节）、Level 3（节/条目）、Level 4（子条目）标题，附带 `heading_level`、`heading_category` 与独立 `bbox`。
+5. **分层落库**:
+   - 物理检测块存入 `blocks.jsonl`（Ground Truth，不可变）；
+   - 版面结构元信息写入 `page_structure.jsonl`，阅读顺序段落写入 `paragraphs_v2.jsonl`（Navigation 层，带 `input_refs`）。
+
 ### 3.2 Navigation（可重建，可删除）
 
 | 内容 | 说明 | 重建依赖 |

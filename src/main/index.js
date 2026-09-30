@@ -85,7 +85,12 @@ function createWindow() {
       preload: preloadPath,
       sandbox: false,
       contextIsolation: true,
-      webSecurity: false
+      webSecurity: false,
+      // 窗口被遮挡/失焦时 Chromium 会暂停 requestAnimationFrame，
+      // 而 Vue <Transition> 依赖两次 rAF 摘除 enter-from，
+      // 一旦停摆 naive-ui 的 modal/drawer 会永久停在 opacity:0，
+      // 留下一张透明的全屏遮罩吞掉所有点击。
+      backgroundThrottling: false
     }
   })
 
@@ -129,10 +134,30 @@ app.whenReady().then(() => {
         raw = raw[0].toUpperCase() + ':' + raw.slice(1)
       }
 
-      if (!fs.existsSync(raw)) {
-        console.warn('[Main] book-pdf file not found on disk:', raw)
+      // 解析要尝试的候选路径列表
+      const candidates = [raw]
+
+      // 如果原始路径不含盘符（相对路径），尝试拼接常见根目录
+      if (!/^[a-zA-Z]:/.test(raw) && !raw.startsWith('\\\\')) {
+        for (const root of [
+          path.join(app.getAppPath(), 'data', '_kage', 'www.marxists.org'),
+          path.join(app.getAppPath(), 'data', '_kage'),
+          path.join(app.getAppPath(), 'data'),
+        ]) {
+          candidates.push(path.join(root, raw))
+        }
+      }
+
+      let resolvedPath = null
+      for (const c of candidates) {
+        if (fs.existsSync(c)) { resolvedPath = c; break }
+      }
+
+      if (!resolvedPath) {
+        console.warn('[Main] book-pdf file not found on disk. tried:', candidates)
         return new Response('File not found: ' + raw, { status: 404 })
       }
+      raw = resolvedPath
 
       const fileUrl = pathToFileURL(raw).toString()
       return net.fetch(fileUrl)

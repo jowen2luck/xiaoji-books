@@ -99,6 +99,14 @@ export default class BookIngestionPipeline {
       }
     }
 
+    // 4. 检查 data/.ocr_reprocess (标准 OCR 重处理输出目录)
+    const ocrReprocessDir = path.resolve(this.dataRoot, '.ocr_reprocess')
+    if (fs.existsSync(ocrReprocessDir)) {
+      // 存储格式为单书独立文件 {book_id}_pages.jsonl / {book_id}_paragraphs.jsonl
+      // 该目录自身作为候选目录，由 _processDirectory 解析
+      dirs.push(ocrReprocessDir)
+    }
+
     return dirs
   }
 
@@ -115,16 +123,19 @@ export default class BookIngestionPipeline {
     let paragraphsCount = 0
     let skippedUntreated = 0
 
-    // 只有具有 pages.jsonl 或 paragraphs.jsonl 的才证明已经过 OCR 提取处理！
-    if (!fs.existsSync(pagesFile) && !fs.existsSync(parasFile)) {
-      return { discovered: 0, ingested: 0, paragraphs: 0, skippedUntreated: 0 }
-    }
+    // 支持两种数据组织形式：
+    //   A) 传统合并文件：dir/pages.jsonl + dir/paragraphs.jsonl（多书混在一个文件）
+    //   B) 单书独立文件：dir/{book_id}_pages.jsonl + dir/{book_id}_paragraphs.jsonl（如 .ocr_reprocess）
+
+    // None of the standard summary files exist — check for per-book files
+    const hasCombinedPages = fs.existsSync(pagesFile)
+    const hasCombinedParas = fs.existsSync(parasFile)
 
     // 读取段落或页面索引
     const bookParagraphsMap = new Map() // book_id -> Paragraph[]
     const bookPagesMap = new Map()       // book_id -> Page[]
 
-    if (fs.existsSync(parasFile)) {
+    if (hasCombinedParas) {
       const lines = fs.readFileSync(parasFile, 'utf-8').split('\n')
       for (const line of lines) {
         if (!line.trim()) continue
@@ -138,7 +149,7 @@ export default class BookIngestionPipeline {
       }
     }
 
-    if (fs.existsSync(pagesFile)) {
+    if (hasCombinedPages) {
       const lines = fs.readFileSync(pagesFile, 'utf-8').split('\n')
       for (const line of lines) {
         if (!line.trim()) continue
@@ -150,6 +161,49 @@ export default class BookIngestionPipeline {
           bookPagesMap.get(bId).push(item)
         } catch {}
       }
+    }
+
+    // 扫描单书独立文件（仅当合并文件不存在或为空）
+    if (!hasCombinedPages || !hasCombinedParas) {
+      const dirEntries = fs.readdirSync(dir, { withFileTypes: true })
+      for (const entry of dirEntries) {
+        if (!entry.isFile()) continue
+        const m = entry.name.match(/^(.+)_pages\.jsonl$/)
+        if (!m) continue
+        const bId = m[1]
+        if (bookPagesMap.has(bId)) continue
+
+        const pf = path.join(dir, entry.name)
+        const ff = path.join(dir, `${bId}_paragraphs.jsonl`)
+
+        if (fs.existsSync(ff)) {
+          const lines = fs.readFileSync(ff, 'utf-8').split('\n')
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const item = JSON.parse(line)
+              if (!bookParagraphsMap.has(bId)) bookParagraphsMap.set(bId, [])
+              bookParagraphsMap.get(bId).push(item)
+            } catch {}
+          }
+        }
+
+        if (fs.existsSync(pf)) {
+          const lines = fs.readFileSync(pf, 'utf-8').split('\n')
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const item = JSON.parse(line)
+              if (!bookPagesMap.has(bId)) bookPagesMap.set(bId, [])
+              bookPagesMap.get(bId).push(item)
+            } catch {}
+          }
+        }
+      }
+    }
+
+    if (bookPagesMap.size === 0 && bookParagraphsMap.size === 0) {
+      return { discovered: 0, ingested: 0, paragraphs: 0, skippedUntreated: 0 }
     }
 
     // 读取元数据 books.jsonl

@@ -69,6 +69,8 @@ Agent (推理、总结、回答)
 
 ## 设计、使用与评测文档
 
+- [OCR_AND_LAYOUT_SPECIFICATION.md](./docs/OCR_AND_LAYOUT_SPECIFICATION.md) — **书籍 OCR 与版面结构化标准方案说明书 (自研 LayoutAnalyzer / 多栏重排 / 多级标题规范)**
+- [DATA_MIGRATION_AND_ROADMAP.md](./docs/DATA_MIGRATION_AND_ROADMAP.md) — **藏书数据资产治理与后续 OCR/版面分析推进规划 (存量回填与增量提取路线图)**
 - [BOOK_ASSISTANT_GUIDE.md](./docs/BOOK_ASSISTANT_GUIDE.md) — **图书助手 (Book Assistant) 客户端使用与架构指南**
 - [BENCHMARK_REPORT.md](./docs/BENCHMARK_REPORT.md) — **企业级知识库问答对比评测与量化报告（Baseline vs 简历版本实现）**
 - [SKILL.md](./SKILL.md) — Skill 详细规范（接口、约束、宪法遵守）

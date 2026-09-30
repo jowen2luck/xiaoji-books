@@ -141,7 +141,26 @@ def reprocess_book(
     return result
 
 
+def setup_signal_handler():
+    """Enable graceful shutdown on SIGINT/SIGTERM."""
+    import signal
+    global _should_stop
+    _should_stop = False
+
+    def handler(signum, frame):
+        global _should_stop
+        _should_stop = True
+        print("\n  (!) Received stop signal, finishing current page then exiting...")
+
+    signal.signal(signal.SIGINT, handler)
+    signal.signal(signal.SIGTERM, handler)
+
+
+_should_stop = False
+
+
 def main():
+    setup_signal_handler()
     import argparse
     parser = argparse.ArgumentParser(description="Reprocess PDFs needing OCR")
     parser.add_argument("--diagnose", default="data/diagnose_content_quality.jsonl",
@@ -161,6 +180,24 @@ def main():
 
     books = load_diagnose_results(args.diagnose)
     print(f"Found {len(books)} books needing OCR reprocessing")
+
+    # Resume: skip books that already have output files
+    pending_books = []
+    for book in books:
+        book_id = book.get("book_id", "")
+        out_file = Path(args.output_dir) / f"{book_id}_pages.jsonl"
+        if out_file.exists() and out_file.stat().st_size > 100:
+            print(f"  Skip (done): {book_id}")
+            continue
+        pending_books.append(book)
+
+    if len(pending_books) < len(books):
+        print(f"  Resuming: {len(pending_books)} pending / {len(books)} total")
+
+    books = pending_books
+    if not books:
+        print("All books already processed. Nothing to do.")
+        return
 
     # Sort by page count ascending (process smaller books first for quick wins)
     books.sort(key=lambda b: b.get("page_count", 0))

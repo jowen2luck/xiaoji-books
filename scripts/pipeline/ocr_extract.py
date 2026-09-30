@@ -41,23 +41,21 @@ def _get_ocr_engine(force: bool = False, onnx_threads: int = 2, **kwargs):
         **kwargs: forwarded to RapidOCR constructor (det_*/cls_*/rec_*/Global).
     """
     global _OCR_ENGINE, _OCR_ENGINE_ARGS
-    # Set per-subengine ONNX RapidOCR convention: det_/cls_/rec_ prefix
-    kwargs.setdefault("det_intra_op_num_threads", onnx_threads)
-    kwargs.setdefault("cls_intra_op_num_threads", onnx_threads)
-    kwargs.setdefault("rec_intra_op_num_threads", onnx_threads)
-    kwargs.setdefault("intra_op_num_threads", onnx_threads)
     if _OCR_ENGINE is not None and not force:
         return _OCR_ENGINE
-
-    if _OCR_ENGINE is not None and _OCR_ENGINE_ARGS != kwargs:
-        force = True
 
     if force and _OCR_ENGINE is not None:
         del _OCR_ENGINE
         _OCR_ENGINE = None
 
     if _OCR_ENGINE is None:
-        _OCR_ENGINE = rapidocr_onnxruntime.RapidOCR(**kwargs)
+        try:
+            if kwargs:
+                _OCR_ENGINE = rapidocr_onnxruntime.RapidOCR(**kwargs)
+            else:
+                _OCR_ENGINE = rapidocr_onnxruntime.RapidOCR()
+        except Exception:
+            _OCR_ENGINE = rapidocr_onnxruntime.RapidOCR()
         _OCR_ENGINE_ARGS = kwargs
     return _OCR_ENGINE
 
@@ -117,14 +115,22 @@ def rasterize_page(pdf_path: str, doc: fitz.Document, page_idx: int,
 # ── OCR ──────────────────────────────────────────────────────────────────────
 
 def ocr_image(ocr_engine, image) -> list:
-    """Run RapidOCR on PIL Image. Returns list of {text, confidence, box}."""
+    """Run RapidOCR on PIL Image, numpy array, bytes, or file path. Returns list of {text, confidence, box}."""
+    import numpy as np
+    from PIL import Image
+
+    if isinstance(image, Image.Image):
+        image = np.array(image)
     result, elapse = ocr_engine(image)
     blocks = []
     if result:
         for line in result:
             if len(line) >= 3:
-                text = line[1]
-                conf = line[2]
+                text = str(line[1])
+                try:
+                    conf = float(line[2])
+                except (ValueError, TypeError):
+                    conf = 1.0
                 box = line[0] if len(line) > 0 else None
                 blocks.append({"text": text, "confidence": conf, "box": box})
     return blocks
@@ -142,6 +148,7 @@ def process_pdf_ocr(
     return_blocks: bool = False,
     onnx_threads: int = 2,
     _doc_handle: Optional[fitz.Document] = None,
+    analyze_layout: bool = True,
 ) -> dict:
     """Full OCR pipeline for ocr_required PDFs.
 
@@ -150,9 +157,12 @@ def process_pdf_ocr(
 
     Returns dict matching v1 schema; if return_blocks=True, also includes
     per-page block data (box + conf) for blocks.jsonl generation.
+    If analyze_layout=True (default), restores multi-column reading order,
+    extracts hierarchical headings, and enriches layout metadata.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from normalizer import normalize_text
+    from layout_analyzer import LayoutAnalyzer
 
     pdf_path = str(Path(pdf_path).resolve())
     if not book_id:
@@ -163,6 +173,7 @@ def process_pdf_ocr(
     # Re-uses cached engine
     ocr_engine = _get_ocr_engine(onnx_threads=onnx_threads)
     ocr_ver = getattr(rapidocr_onnxruntime, "__version__", "unknown")
+    layout_engine = LayoutAnalyzer() if analyze_layout else None
 
     # Use caller-provided doc handle or open fresh
     own_doc = _doc_handle is None
@@ -195,8 +206,23 @@ def process_pdf_ocr(
                 "block_count": len(blocks),
                 "normalization_applied": applied,
             }
-            if return_blocks:
+
+            if layout_engine and blocks:
+                img_w, img_h = getattr(img, "size", (None, None))
+                layout_res = layout_engine.analyze_page(blocks, page_width=img_w, page_height=img_h)
+                page_rec["columns"] = layout_res["page_structure"]["columns"]
+                page_rec["layout_meta"] = layout_res["page_structure"]
+                page_rec["headings"] = layout_res["headings"]
+                page_rec["paragraphs"] = layout_res["paragraphs"]
+                if layout_res["text_reading_order"]:
+                    reordered_norm, _, _ = normalize_text(layout_res["text_reading_order"])
+                    page_rec["text_normalized"] = reordered_norm
+                    page_rec["text_reading_order"] = layout_res["text_reading_order"]
+                if return_blocks:
+                    page_rec["blocks"] = layout_res["reading_order_blocks"]
+            elif return_blocks:
                 page_rec["blocks"] = blocks
+
             pages.append(page_rec)
 
             if progress_cb:

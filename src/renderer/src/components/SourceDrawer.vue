@@ -66,18 +66,33 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMessage } from 'naive-ui'
+
+const props = defineProps({
+  show: { type: Boolean, default: false },
+  evidence: { type: Object, default: null }
+})
+
+const emit = defineEmits(['update:show'])
 
 const message = useMessage()
 
-const visible = ref(false)
+const visible = computed({
+  get: () => props.show,
+  set: (v) => emit('update:show', v)
+})
+
 const loading = ref(false)
 const currentEvidence = ref(null)
 const contextData = ref(null)
 const drawerTitle = ref('📖 原文伴读与证据溯源')
 const showBefore = ref(false)
 const showAfter = ref(false)
+
+watch(() => props.show, (v) => {
+  if (v && props.evidence) open(props.evidence)
+})
 
 /**
  * 打开抽屉并加载完整上下文
@@ -133,7 +148,7 @@ defineExpose({ open })
 .loading-box, .empty-box {
   padding: 40px;
   text-align: center;
-  color: #888;
+  color: var(--color-ink-faint);
 }
 .drawer-body {
   display: flex;
@@ -141,7 +156,7 @@ defineExpose({ open })
   gap: 16px;
 }
 .meta-alert {
-  border-radius: 8px;
+  border-radius: var(--radius-lg) !important;
 }
 .meta-row {
   display: flex;
@@ -149,56 +164,61 @@ defineExpose({ open })
   align-items: center;
 }
 .meta-sub {
-  font-size: 12px;
-  color: #718096;
+  font-size: 11px;
+  color: var(--color-ink-muted);
 }
 .target-evidence-card {
-  background: #fffdf5;
-  border: 1px solid #f6e05e;
-  border-left: 4px solid #d69e2e;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  background: var(--color-accent-soft);
+  border: 1px solid #fde68a;
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
 }
 .card-badge {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #b7791f;
-  margin-bottom: 8px;
+  color: var(--color-accent);
+  margin-bottom: 10px;
+  letter-spacing: 0.3px;
 }
 .target-text {
   margin: 0;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #2d3748;
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--color-ink);
   white-space: pre-wrap;
 }
 .context-section {
-  border: 1px dashed #cbd5e0;
-  border-radius: 6px;
-  background: #f7fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  overflow: hidden;
 }
 .context-header {
-  padding: 8px 12px;
+  padding: 8px 14px;
   font-size: 12px;
-  color: #4a5568;
+  font-weight: 500;
+  color: var(--color-ink-soft);
   cursor: pointer;
   user-select: none;
+  transition: color 0.15s;
 }
 .context-header:hover {
-  color: #2b6cb0;
+  color: var(--color-accent);
 }
 .context-content {
-  padding: 10px 14px;
+  padding: 12px 14px;
   font-size: 13px;
-  line-height: 1.6;
-  color: #718096;
-  border-top: 1px solid #edf2f7;
+  line-height: 1.65;
+  color: var(--color-ink-muted);
+  border-top: 1px solid var(--color-border);
   white-space: pre-wrap;
 }
 .drawer-footer-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 12px;
 }
 </style>

@@ -68,13 +68,15 @@ Ground Truth 层（`text_normalized`）允许:
 
 推断优先级: PDF 书签 → 印刷目录页 → 正则规则 → LLM 兜底。
 
-### 0.5 OCR 引擎
+### 0.5 OCR 与版面分析引擎标准 (已升级生产标准)
 
-最终选择: **RapidOCR + ONNX Runtime**（CPU 推理引擎）。
+最终选择: **RapidOCR + ONNX Runtime (CPU) + LayoutAnalyzer (自研版面切带与多级标题引擎)**。
+详细规范与准则请参阅: [OCR_AND_LAYOUT_SPECIFICATION.md](../OCR_AND_LAYOUT_SPECIFICATION.md)。
 
-背景: PaddleOCR 3.x + PaddlePaddle 3.3.1 含 oneDNN 引擎，在当前 CPU 上报 `ConvertPirAttribute2RuntimeAttribute not support [pir::ArrayAttribute<pir::DoubleAttribute>]`，无法推理。RapidOCR 使用 ONNX Runtime 推理，无此问题。
-
-依赖链: `rapidocr_onnxruntime` → `onnxruntime` → `opencv-python` + `pdf2image` → poppler（系统已有）
+- **选型与淘汰理由**:
+  - 淘汰 `mobile_workshop` 方案：多设备 Tesseract 集群丢弃了原始 bbox 坐标；Paddle PP-Structure v2 / PicoDet / OrderPredictor 在 Windows CPU 下由于 oneDNN 冲突报错 `ConvertPirAttribute2RuntimeAttribute` 致命崩溃且路径写死。
+  - 选择升级方案：RapidOCR 纯 CPU ONNX 秒级推理，稳定无崩溃，100% 保留 4 点物理 bbox；配合 `LayoutAnalyzer` 实现了通栏断点切带（彻底消除双栏标题穿透错乱）与 Level 1~4 多级标题结构化提取。
+- **依赖链**: `rapidocr_onnxruntime` → `onnxruntime` → `opencv-python` + `pymupdf` (fitz 内存光栅化，无需 poppler 子进程)。
 
 ### 0.5b Embedding 模型
 
@@ -329,16 +331,21 @@ manifest.jsonl
 
 **特殊处理**: `partial_text` 的书——某些页 OCR、某些页直接提取，逐页判断。
 
-### 5.4 OcrPipeline
+### 5.4 OcrPipeline (生产版规范)
 
 **输入**: `status = ocr_required OR parser_error`
 
 **步骤**:
-1. pdf2image 逐页栅格化 (200 DPI 起点，扫描件 300 DPI)
-2. RapidOCR 识别（中文+英文模型，ONNX Runtime 推理）
-3. 后处理: 全角转半角、CJK 空格修复
-4. 记录每页的 OCR 置信度
-5. 后续与 TextExtract 相同的 Normalizer + Anchor Builder
+1. PyMuPDF (fitz) 内存光栅化 (200 DPI 起点，纯扫描件 300 DPI，无需子进程)
+2. RapidOCR 识别（中文+英文模型，ONNX Runtime 纯 CPU 推理），保留物理 4 点 bbox 坐标
+3. `LayoutAnalyzer` 结构化处理：
+   - 过滤与分离顶部重复页眉与边沿页码
+   - 通栏大标题断点切带（Span-Block Banding）
+   - 自适应多栏检测与人类阅读顺序重排（左栏自顶向下 -> 右栏自顶向下）
+   - 多级标题层级（Level 1~4）与类别分类
+4. 后处理与分层记录:
+   - Ground Truth 写入 `blocks.jsonl`，保留物理真实检测坐标
+   - Navigation 写入 `page_structure.jsonl`、`paragraphs_v2.jsonl`（带重排顺序、标题绑定与分栏元信息）
 
 ### 5.5 Normalizer 规则明细
 

@@ -1,729 +1,1293 @@
 <template>
-  <div class="parallel-reader-container">
-    <!-- 顶部控制与工具栏 -->
-    <div class="reader-toolbar">
-      <div class="toolbar-left">
-        <n-button quaternary circle size="small" class="back-btn" @click="$emit('back-to-chat')" title="返回伴读对话">
-          <template #icon><n-icon :size="18"><ArrowBackOutline /></n-icon></template>
-        </n-button>
-
-        <div class="book-selector-wrap">
-          <n-select
-            v-model:value="selectedBookId"
-            :options="bookOptions"
-            filterable
-            placeholder="选择或搜索要对照阅读的书籍..."
-            size="small"
-            style="width: 320px;"
-            @update:value="onBookChange"
-          />
+  <div class="parallel-reader">
+    <!-- 极简顶栏 -->
+    <header class="reader-top-bar">
+      <div class="top-left">
+        <div class="back-btn" @click="$emit('back')">
+          <span class="back-arrow">‹</span>
+          <span class="back-label">书库</span>
         </div>
-
-        <div v-if="currentBook" class="book-meta-chips">
-          <n-tag size="small" type="info" round>{{ currentBook.primaryCategory || '学术文献' }}</n-tag>
-          <span class="meta-item">共 {{ currentBook.pageCount || totalPages }} 页</span>
-          <span class="meta-item">已录入 {{ totalParagraphs }} 段文字</span>
+        <div class="book-breadcrumb">
+          <span class="crumb-book">{{ currentBook?.title || '加载中...' }}</span>
+          <span class="crumb-sep">/</span>
+          <span class="crumb-page">第 {{ currentPage }} 页</span>
         </div>
       </div>
 
-      <!-- 中间：翻页控制与页码联动 -->
-      <div class="toolbar-center">
-        <div class="page-navigator">
-          <n-button
-            size="tiny"
-            quaternary
-            :disabled="currentPage <= 1"
-            @click="jumpToPage(currentPage - 1)"
-            title="上一页"
-          >
-            <template #icon><n-icon><ChevronBackOutline /></n-icon></template>
-          </n-button>
-
-          <span class="page-label">第</span>
+      <div class="top-right">
+        <!-- 页码快速跳转 -->
+        <div class="page-jump">
+          <span class="page-jump-label">跳转</span>
           <n-input-number
-            v-model:value="inputPageNumber"
-            size="tiny"
+            v-model:value="jumpPage"
             :min="1"
-            :max="maxPage"
-            style="width: 70px;"
-            :show-button="false"
-            @keydown.enter="jumpToPage(inputPageNumber)"
-            @blur="jumpToPage(inputPageNumber)"
-          />
-          <span class="page-label">/ {{ maxPage }} 页</span>
-
-          <n-button
+            :max="currentBook?.totalPages || currentBook?.pageCount || 999"
             size="tiny"
-            quaternary
-            :disabled="currentPage >= maxPage"
-            @click="jumpToPage(currentPage + 1)"
-            title="下一页"
-          >
-            <template #icon><n-icon><ChevronForwardOutline /></n-icon></template>
-          </n-button>
+            style="width: 70px"
+            @update:value="handleJumpPage"
+            :show-button="false"
+          />
+          <span class="page-total">/ {{ currentBook?.totalPages || currentBook?.pageCount || '—' }}</span>
         </div>
 
-        <n-divider vertical style="margin: 0 12px;" />
-
-        <n-radio-group v-model:value="textDisplayMode" size="tiny">
-          <n-radio-button value="currentPage">当前页文字</n-radio-button>
-          <n-radio-button value="allContinuous">整书连续通读</n-radio-button>
-        </n-radio-group>
-      </div>
-
-      <!-- 右侧：布局与外部操作 -->
-      <div class="toolbar-right">
-        <n-tooltip trigger="hover">
-          <template #trigger>
-            <n-button-group size="tiny">
-              <n-button :type="splitRatio === 'equal' ? 'primary' : 'default'" @click="splitRatio = 'equal'">1:1 对等</n-button>
-              <n-button :type="splitRatio === 'pdf' ? 'primary' : 'default'" @click="splitRatio = 'pdf'">原件优先</n-button>
-              <n-button :type="splitRatio === 'text' ? 'primary' : 'default'" @click="splitRatio = 'text'">文字优先</n-button>
-            </n-button-group>
-          </template>
-          切换左右分栏视图比例
-        </n-tooltip>
-
-        <n-tooltip trigger="hover" v-if="currentBook?.sourcePath">
-          <template #trigger>
-            <n-button size="tiny" secondary type="info" @click="openExternalPdf">
-              <template #icon><n-icon><OpenOutline /></n-icon></template>
-              本地打开原件
-            </n-button>
-          </template>
-          在系统默认 PDF 软件中打开此文献原件
-        </n-tooltip>
-      </div>
-    </div>
-
-    <!-- 主对照预览分栏区域 -->
-    <div class="parallel-split-layout" :class="`split-${splitRatio}`">
-      <!-- 左侧：原书原件 (PDF 原本) -->
-      <div class="pane original-pane">
-        <div class="pane-header">
-          <div class="pane-title">
-            <span class="pane-badge pdf-badge">📖 原书原件影印</span>
-            <span class="pane-subtitle" v-if="currentBook">
-              《{{ currentBook.title }}》· 第 {{ currentPage }} 页
-            </span>
-          </div>
-          <div class="pane-actions">
-            <n-tag size="tiny" type="default" round>Chromium 内置引擎</n-tag>
-          </div>
+        <!-- 分割比例 — 点击循环切换 -->
+        <div class="split-toggle" @click="cycleSplitRatio" :title="`当前: ${splitRatioLabel}`">
+          <span class="split-icon">{{ splitRatioIcon }}</span>
         </div>
 
-        <div class="pane-content pdf-container">
-          <div v-if="!currentBook" class="pane-placeholder">
-            <n-empty description="请选择要阅读的书籍" />
-          </div>
+        <!-- 伴读提问 -->
+        <div class="ask-btn" @click="chatPanelOpen = true" :class="{ active: chatPanelOpen }">
+          <span class="ask-icon">!</span>
+          <span class="ask-label">伴读</span>
+        </div>
+      </div>
+    </header>
 
-          <div v-else-if="!currentBook.sourcePath" class="pane-placeholder">
-            <n-empty description="该书籍无对应本地 PDF 原件路径" />
+    <!-- 主体对照区 -->
+    <div class="reader-body" :class="`split-${splitRatio}`">
+      <!-- PDF 原版影印 -->
+      <section class="pane-pane original-pane">
+        <div class="pane-label">
+          <span class="label-dot pdf-dot"></span>
+          <span class="label-text">原版影印 · 第 {{ currentPage }} 页</span>
+          <div class="pane-control-page">
+            <span class="page-arrow" :class="{ disabled: currentPage <= 1 }" @click="goPrevPage()">‹</span>
+            <span class="page-arrow" :class="{ disabled: currentPage >= (currentBook?.totalPages || currentBook?.pageCount || 999) }" @click="goNextPage()">›</span>
           </div>
-
+        </div>
+        <div class="pane-canvas">
+          <div v-if="!pdfUrl" class="empty-pane">
+            <div class="empty-mark">⊟</div>
+            <div class="empty-text">请在左侧馆藏书库选择一本书</div>
+          </div>
           <iframe
             v-else
-            :key="pdfIframeKey"
-            :src="pdfUrlWithPage"
-            class="pdf-iframe"
-            title="原书原件预览"
+            :src="pdfPageUrl"
+            class="pdf-frame"
+            frameborder="0"
           ></iframe>
         </div>
-      </div>
+      </section>
 
-      <!-- 中间分界线指示条 -->
+      <!-- 中央分割线 -->
       <div class="split-divider">
-        <div class="divider-line"></div>
-        <div class="divider-badge">对照</div>
+        <div class="divider-grip"></div>
       </div>
 
-      <!-- 右侧：数字化提取文字 -->
-      <div class="pane extracted-pane">
-        <div class="pane-header">
-          <div class="pane-title">
-            <span class="pane-badge text-badge">📝 数字化提取文字</span>
-            <span class="pane-subtitle">
-              {{ textDisplayMode === 'currentPage' ? `第 ${currentPage} 页 (共 ${paragraphs.length} 段)` : `全书连续流 (已载入 ${paragraphs.length} 段)` }}
-            </span>
-          </div>
-          <div class="pane-actions">
-            <n-button size="tiny" quaternary :loading="loading" @click="loadParagraphs(true)">
-              🔄 刷新文字
-            </n-button>
-          </div>
+      <!-- OCR 提取文字 -->
+      <section class="pane-pane text-pane">
+        <div class="pane-label">
+          <span class="label-dot text-dot"></span>
+          <span class="label-text">提取文字 · 本页 {{ totalParagraphs }} 段</span>
+          <n-tooltip trigger="hover" placement="bottom">
+            <template #trigger>
+              <span class="label-hint" title="为什么不能在左侧影印上高亮？">?</span>
+            </template>
+            本工具目前只做「页级对应」：左栏影印与右栏文字按同一页码并排展示。
+            抽取阶段未保留段落在页面上的坐标，因此无法在原版影印上高亮定位到具体段落。
+          </n-tooltip>
         </div>
+        <div class="pane-canvas">
+          <div class="text-scroll" ref="textScrollRef">
+            <div v-if="paragraphs.length === 0" class="empty-pane">
+              <div class="empty-mark">⟫</div>
+              <div class="empty-text">本页暂无提取文字</div>
+              <div class="empty-sub">可能是空白页，或该页 OCR 失败</div>
+            </div>
 
-        <div class="pane-content text-scroll-container" ref="textScrollRef" @mouseup="onTextSelect">
-          <div v-if="loading && paragraphs.length === 0" class="pane-loading">
-            <n-spin size="medium" />
-            <p>正在调取数字化原文字据...</p>
-          </div>
+            <!-- 段落切分质量提示：抽取阶段未保留版面信息时如实告知 -->
+            <div v-else-if="paragraphs.length === 1" class="seg-notice">
+              <span class="seg-notice-icon">⚠</span>
+              <div class="seg-notice-body">
+                <div class="seg-notice-title">本页未做段落切分</div>
+                <div class="seg-notice-text">
+                  该书在 OCR 阶段未保留段落版面信息，整页文字作为单条记录入库，
+                  因此这里看到的是一整段而非若干自然段。这不是阅读故障，而是抽取质量问题。
+                </div>
+              </div>
+            </div>
 
-          <div v-else-if="paragraphs.length === 0" class="pane-placeholder">
-            <n-empty :description="textDisplayMode === 'currentPage' ? `第 ${currentPage} 页未录入提取文字或纯空白页` : '暂无提取文字'" />
-          </div>
-
-          <div v-else class="paragraphs-list">
-            <div
-              v-for="p in paragraphs"
-              :key="p.id"
-              class="para-card"
-              :class="{ 'highlighted': targetParagraphId === p.id }"
-            >
-              <div class="para-meta-row">
-                <span
-                  class="para-page-badge"
-                  @click="jumpToPage(p.pageIndex + 1)"
-                  :title="`点击使左侧原件跳转到第 ${p.pageIndex + 1} 页`"
-                >
-                  📍 {{ p.printedPage || `第 ${p.pageIndex + 1} 页` }}
-                </span>
-                <span class="para-index-tag">段落 #{{ p.paraIndex + 1 }}</span>
-                <span class="para-length-tag">{{ p.text.length }} 字</span>
-
+            <div v-else class="paragraphs-flow">
+              <div
+                v-for="para in paragraphs"
+                :key="para.id"
+                class="para-card"
+                :data-para-id="para.id"
+                :class="{ highlighted: para.id === highlightedParagraphId }"
+              >
+                <div class="para-meta">
+                  <span class="para-num">{{ para.paraIndex ?? ((para.pageIndex ?? 0) + 1) + '.' + (paragraphs.indexOf(para) + 1) }}</span>
+                  <span class="para-page">{{ para.printedPage || `P.${(para.pageIndex ?? 0) + 1}` }}</span>
+                  <span class="para-len">{{ para.text?.length || 0 }}字</span>
+                </div>
+                <div class="para-text">{{ para.text }}</div>
                 <div class="para-actions">
-                  <n-button
-                    size="tiny"
-                    quaternary
-                    type="primary"
-                    @click="askWithParagraph(p)"
-                    title="带着本段文字返回伴读对话，由小鸡助手深入解析"
-                  >
-                    💡 研读此段
-                  </n-button>
-                  <n-button
-                    size="tiny"
-                    quaternary
-                    @click="copyParagraph(p.text)"
-                    title="复制文字"
-                  >
-                    📋
+                  <n-button size="tiny" secondary @click="askAboutPara(para)">
+                    提问此段
                   </n-button>
                 </div>
               </div>
-
-              <div class="para-text-content">
-                {{ p.text }}
-              </div>
             </div>
 
-            <!-- 连续通读更多加载 -->
-            <div
-              v-if="textDisplayMode === 'allContinuous' && paragraphs.length < totalParagraphs"
-              class="load-more-bar"
-            >
-              <n-button size="small" secondary :loading="loading" @click="loadMoreParagraphs">
-                加载后续章节段落...
+            <div class="load-more">
+              <n-button v-if="hasMore" size="small" quaternary @click="loadMoreParagraphs">
+                下一页（第 {{ currentPage + 1 }} 页）
               </n-button>
+              <div v-else class="load-more-end">已是本页最后一段 · 本工具按页对应，不提供跨页检索</div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
+
+    <!-- 右侧伴读提问面板 — 抽屉 -->
+    <transition name="slide-panel">
+      <aside v-if="chatPanelOpen" class="chat-slide-panel">
+        <div class="chat-panel-header">
+          <div class="chat-panel-title">
+            <span class="title-icon">!</span>
+            <span>伴读提问</span>
+          </div>
+          <div class="header-controls">
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <n-button quaternary circle size="tiny" @click="toggleTrace">
+                  <template #icon>
+                    <n-icon size="14"><SparklesOutline /></n-icon>
+                  </template>
+                </n-button>
+              </template>
+              {{ showTrace ? '收起思维链' : '展开思维链' }}
+            </n-tooltip>
+            <n-button quaternary circle size="tiny" @click="chatPanelOpen = false">
+              <template #icon>
+                <n-icon size="14"><CloseOutline /></n-icon>
+              </template>
+            </n-button>
+          </div>
+        </div>
+
+        <!-- Scope indicator -->
+        <div class="chat-scope-bar">
+          <span class="scope-indicator"></span>
+          <span class="scope-text">仅基于《{{ currentBook?.title }}》第 {{ currentPage }} 页内容回答</span>
+        </div>
+
+        <!-- 消息流 -->
+        <div class="chat-messages" ref="chatMsgRef">
+          <div v-if="chatMessages.length === 0" class="chat-empty">
+            <div class="chat-empty-mark">!</div>
+            <div class="chat-empty-title">针对当前页的内容提问</div>
+            <div class="chat-empty-hint">例如：解释第3段的核心论点、分析作者在此处的修辞手法...</div>
+            <div class="chat-quick-prompts">
+              <n-tag
+                v-for="p in quickPrompts"
+                :key="p"
+                size="small"
+                round
+                clickable
+                class="quick-tag"
+                @click="sendChatMessage(p)"
+              >
+                {{ p }}
+              </n-tag>
+            </div>
+          </div>
+
+          <div v-for="(msg, idx) in chatMessages" :key="idx" class="chat-msg" :class="msg.role">
+            <div v-if="msg.role === 'user'" class="msg-bubble user-bubble">
+              {{ msg.content }}
+            </div>
+            <div v-else class="msg-bubble assistant-bubble">
+              <div class="msg-header">
+                <span class="msg-avatar">!</span>
+                <span class="msg-name">书友</span>
+              </div>
+              <div class="msg-text" v-html="renderMarkdown(msg.content)"></div>
+              <!-- 思维链折叠 -->
+              <div v-if="msg.trace && msg.trace.length > 0" class="msg-trace">
+                <div class="trace-toggle" @click="msg._showTrace = !msg._showTrace">
+                  推理 {{ msg.trace.length }} 步
+                </div>
+                <div v-if="msg._showTrace" class="trace-body">
+                  <div v-for="(s, si) in msg.trace" :key="si" class="trace-row">
+                    <span class="trace-num">{{ si + 1 }}</span>
+                    <span class="trace-text">{{ s.thought || s.action || s.content }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 思考中 -->
+          <div v-if="chatLoading" class="chat-msg assistant">
+            <div class="msg-bubble assistant-bubble thinking">
+              <div class="thinking-dots"><span></span><span></span><span></span></div>
+              <span class="thinking-span">书友正在阅读当前页...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div class="chat-input-zone">
+          <n-input
+            v-model:value="chatInput"
+            type="textarea"
+            placeholder="就本页内容提问... (Enter 发送)"
+            :autosize="{ minRows: 1, maxRows: 4 }"
+            @keydown.enter.exact.prevent="sendChatMessage()"
+            :disabled="chatLoading"
+          />
+          <div class="input-controls">
+            <span class="input-keyhint">Shift+Enter 换行</span>
+            <n-button type="primary" size="small" :loading="chatLoading" :disabled="!chatInput.trim()" @click="sendChatMessage()">
+              发送
+            </n-button>
+          </div>
+        </div>
+      </aside>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useMessage } from 'naive-ui'
+import { marked } from 'marked'
 import {
-  ArrowBackOutline,
-  ChevronBackOutline,
-  ChevronForwardOutline,
-  OpenOutline
+  SparklesOutline,
+  CloseOutline
 } from '@vicons/ionicons5'
 
 const props = defineProps({
-  initialBookId: { type: String, default: null },
+  initialBookId: { type: Number, default: null },
   initialPage: { type: Number, default: 1 },
-  initialParagraphId: { type: String, default: null }
+  initialParagraphId: { type: String, default: null },
+  initialSessionId: { type: String, default: '' }
 })
 
-const emit = defineEmits(['back-to-chat', 'ask-question'])
+const emit = defineEmits(['back', 'jump-shelf'])
+
 const message = useMessage()
 
-// 状态
-const books = ref([])
-const selectedBookId = ref(null)
+// 书本 & 页码
 const currentBook = ref(null)
-const currentPage = ref(1)
-const inputPageNumber = ref(1)
-const targetParagraphId = ref(null)
+const currentPage = ref(props.initialPage || 1)
+const currentParagraphId = ref(props.initialParagraphId)
+const jumpPage = ref(currentPage.value)
+const pdfUrl = ref('')
 
+// PDF页面URL — 附带 #page= 锚点，翻页时iframe自动跳转
+const pdfPageUrl = computed(() => {
+  if (!pdfUrl.value) return ''
+  // 移除已有锚点，添加新锚点
+  const base = pdfUrl.value.split('#')[0]
+  return `${base}#page=${currentPage.value}&view=FitH`
+})
+
+// 分割比例
+const splitRatio = ref('equal') // equal | pdf | text
+const splitRatioLabel = computed(() => ({
+  equal: '1 : 1',
+  pdf: '偏重影印',
+  text: '偏重文本'
+}[splitRatio.value]))
+const splitRatioIcon = computed(() => ({
+  equal: '⇆',
+  pdf: '⟨⟩⟩',
+  text: '⟨⟩⟨'
+}[splitRatio.value]))
+
+// 段落数据
 const paragraphs = ref([])
 const totalParagraphs = ref(0)
-const loading = ref(false)
-const offset = ref(0)
-const pageSize = 40
+const hasMore = ref(false)
+const textScrollRef = ref(null)
+const highlightedParagraphId = ref(props.initialParagraphId)
 
-// 视图控制
-const splitRatio = ref('equal') // 'equal', 'pdf', 'text'
-const textDisplayMode = ref('currentPage') // 'currentPage', 'allContinuous'
-const selectedSelectionText = ref('')
+// 聊天
+const chatPanelOpen = ref(false)
+const chatMessages = ref([])
+const chatInput = ref('')
+const chatLoading = ref(false)
+const showTrace = ref(false)
+const chatMsgRef = ref(null)
 
-// 计算最大页码
-const maxPage = computed(() => currentBook.value?.pageCount || 100)
-const totalPages = computed(() => currentBook.value?.pageCount || 1)
+const quickPrompts = [
+  '解释本页的核心论点',
+  '梳理本页的逻辑结构',
+  '本页有哪些关键概念',
+  '分析作者在此处的修辞手法'
+]
 
-// 书籍下拉选项
-const bookOptions = computed(() => {
-  return books.value.map(b => ({
-    label: `《${b.title}》 (${b.primaryCategory || '文献'} · ${b.pageCount || 0}页)`,
-    value: b.id
-  }))
-})
-
-// 原书 PDF 地址（携带 #page=X 实现原生跳页）
-const pdfUrlWithPage = computed(() => {
-  if (!currentBook.value?.sourcePath) return ''
-  const baseUrl = window.api?.getPdfUrl
-    ? window.api.getPdfUrl(currentBook.value.sourcePath)
-    : `book-pdf:///${currentBook.value.sourcePath.replace(/\\/g, '/').replace(/^\/+/, '')}`
-  return `${baseUrl}#page=${currentPage.value}&view=FitH`
-})
-
-// iframe 缓存刷新 key
-const pdfIframeKey = computed(() => {
-  return `${selectedBookId.value}_p${currentPage.value}`
-})
-
-// 初始化与监听
 onMounted(async () => {
-  await loadBooks()
   if (props.initialBookId) {
-    const target = books.value.find(b => b.id === props.initialBookId)
-    if (target) {
-      selectBook(target, props.initialPage || 1, props.initialParagraphId)
-      return
-    }
+    await loadBook(props.initialBookId)
   }
-  if (books.value.length > 0 && !selectedBookId.value) {
-    selectBook(books.value[0], 1)
-  }
+  window.addEventListener('keydown', handleKeydown)
 })
 
-watch(() => props.initialBookId, (newId) => {
-  if (newId) {
-    const b = books.value.find(item => item.id === newId)
-    if (b) selectBook(b, props.initialPage || 1, props.initialParagraphId)
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
+
+function handleKeydown(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+    e.preventDefault()
+    goPrevPage()
+  } else if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+    e.preventDefault()
+    goNextPage()
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    currentPage.value = 1
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    currentPage.value = currentBook.value?.totalPages || currentBook.value?.pageCount || 999
   }
+}
+
+watch(() => props.initialBookId, async (id) => {
+  if (id) await loadBook(id)
 })
 
-watch(textDisplayMode, () => {
-  loadParagraphs(true)
+watch(currentPage, (p) => {
+  jumpPage.value = p
+  // 翻页时右侧文字区回到顶部
+  if (textScrollRef.value) textScrollRef.value.scrollTop = 0
+  loadPageParagraphs()
 })
 
-async function loadBooks() {
-  if (window.api?.listBooks) {
-    const res = await window.api.listBooks()
-    if (res.success && Array.isArray(res.data)) {
-      books.value = res.data
+async function loadBook(bookId) {
+  if (window.api?.getBook) {
+    const res = await window.api.getBook(bookId)
+    if (res.success && res.data) {
+      currentBook.value = res.data
+      // 兼容性：优先 pdfUrl/filePath，回退到 sourcePath
+      const srcLike = res.data.pdfUrl || res.data.filePath || res.data.sourcePath || ''
+      if (srcLike.startsWith('book-pdf://')) {
+        pdfUrl.value = srcLike
+      } else if (srcLike) {
+        pdfUrl.value = window.api.getPdfUrl ? window.api.getPdfUrl(srcLike) : srcLike
+      } else {
+        pdfUrl.value = ''
+      }
+      await loadPageParagraphs()
     }
   }
 }
 
-function selectBook(book, page = 1, paraId = null) {
-  selectedBookId.value = book.id
-  currentBook.value = book
-  currentPage.value = Math.max(1, Math.min(page, book.pageCount || 999))
-  inputPageNumber.value = currentPage.value
-  targetParagraphId.value = paraId
-  loadParagraphs(true)
-}
+async function loadPageParagraphs() {
+  if (!currentBook.value) return
+  const api = window.api || {}
+  const fetchParas = api.getParagraphs || api.getBookParagraphs
+  if (fetchParas) {
+    const res = await fetchParas({
+      bookId: currentBook.value.id,
+      pageIndex: currentPage.value - 1,  // DB page_index 是 0-based
+      limit: 200
+    })
+    if (res.success && res.data) {
+      paragraphs.value = res.data.paragraphs || res.data.list || []
+      totalParagraphs.value = res.data.total || 0
+      hasMore.value = res.data.hasMore || false
 
-function onBookChange(bookId) {
-  const b = books.value.find(item => item.id === bookId)
-  if (b) {
-    selectBook(b, 1)
-  }
-}
-
-function jumpToPage(page) {
-  const target = Math.max(1, Math.min(page, maxPage.value))
-  currentPage.value = target
-  inputPageNumber.value = target
-  if (textDisplayMode.value === 'currentPage') {
-    loadParagraphs(true)
-  }
-}
-
-async function loadParagraphs(reset = false) {
-  if (!selectedBookId.value) return
-  if (reset) {
-    offset.value = 0
-    paragraphs.value = []
-  }
-  loading.value = true
-  try {
-    if (window.api?.getBookParagraphs) {
-      const payload = {
-        bookId: selectedBookId.value,
-        offset: offset.value,
-        limit: pageSize
-      }
-      if (textDisplayMode.value === 'currentPage') {
-        payload.pageIndex = currentPage.value - 1
-      }
-      const res = await window.api.getBookParagraphs(payload)
-      if (res.success && res.data) {
-        totalParagraphs.value = res.data.total
-        if (reset) {
-          paragraphs.value = res.data.paragraphs
-        } else {
-          paragraphs.value.push(...res.data.paragraphs)
-        }
-        offset.value += res.data.paragraphs.length
-
-        // 如果有指定目标段落，滚动到该段落
-        if (targetParagraphId.value) {
-          nextTick(() => {
-            const el = document.querySelector('.para-card.highlighted')
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          })
-        }
+      // 跳转高亮
+      if (highlightedParagraphId.value) {
+        await nextTick()
+        scrollToPara(highlightedParagraphId.value)
       }
     }
-  } catch (err) {
-    message.error('加载提取文字失败: ' + err.message)
-  } finally {
-    loading.value = false
   }
 }
 
 async function loadMoreParagraphs() {
-  if (loading.value || paragraphs.value.length >= totalParagraphs.value) return
-  await loadParagraphs(false)
+  // load next page's paragraphs
+  currentPage.value += 1
 }
 
-function onTextSelect() {
-  const sel = window.getSelection()?.toString().trim()
-  if (sel && sel.length > 4) {
-    selectedSelectionText.value = sel
+function handleJumpPage(page) {
+  if (page && page >= 1) {
+    currentPage.value = page
   }
 }
 
-function copyParagraph(text) {
-  navigator.clipboard.writeText(text)
-  message.success('段落文字已复制到剪贴板')
+function goPrevPage() {
+  if (currentPage.value > 1) currentPage.value--
 }
 
-function askWithParagraph(p) {
-  const query = `请针对《${currentBook.value?.title}》第 ${p.pageIndex + 1} 页的以下原文论述进行学术研读与要点解读：\n\n> "${p.text}"`
-  emit('ask-question', {
-    question: query,
-    scope: { type: 'single_book', bookId: currentBook.value?.id, bookTitle: currentBook.value?.title }
+function goNextPage() {
+  if (currentPage.value < (currentBook.value?.totalPages || 999)) currentPage.value++
+}
+
+function cycleSplitRatio() {
+  const order = ['equal', 'pdf', 'text']
+  const idx = order.indexOf(splitRatio.value)
+  splitRatio.value = order[(idx + 1) % 3]
+}
+
+function scrollToPara(paraId) {
+  if (!paraId || !textScrollRef.value) return
+  nextTick(() => {
+    const root = textScrollRef.value
+    // id 可能含 ':' 等特殊字符，逐个比对比 CSS 选择器更稳
+    const cards = Array.from(root.querySelectorAll('[data-para-id]'))
+    let el = cards.find(c => c.dataset.paraId === paraId)
+    if (!el) {
+      // 兜底：证据 id 与段落 id 形态不同时（如 ev_ 前缀），退化为首个段落
+      const norm = String(paraId).replace(/^ev_/, '').replace(/_\d+$/, '')
+      el = cards.find(c => c.dataset.paraId === norm || c.dataset.paraId.includes(norm))
+    }
+    if (!el) el = cards[0]
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   })
 }
 
-async function openExternalPdf() {
-  if (!currentBook.value?.sourcePath) return
-  if (window.api?.openPath) {
-    const res = await window.api.openPath(currentBook.value.sourcePath)
-    if (!res.success) {
-      message.warning('打开原件失败: ' + (res.error || '未知错误'))
+function askAboutPara(para) {
+  chatPanelOpen.value = true
+  chatInput.value = `关于这一段："${para.text?.slice(0, 40)}..."，请解释其含义`
+}
+
+// Chat
+async function sendChatMessage(forcedInput) {
+  const text = forcedInput || chatInput.value.trim()
+  if (!text || chatLoading.value) return
+
+  chatMessages.value.push({ role: 'user', content: text })
+  chatInput.value = ''
+  chatLoading.value = true
+
+  try {
+    const res = await window.api.askInquiry({
+      question: text,
+      scope: { type: 'single_book', bookId: props.initialBookId, page: currentPage.value },
+      sessionId: props.initialSessionId,
+      history: chatMessages.value.slice(-6).map(m => ({ role: m.role, content: m.content }))
+    })
+
+    if (res.success && res.data) {
+      chatMessages.value.push({
+        role: 'assistant',
+        content: res.data.markdownAnswer,
+        trace: res.data.executionTrace || [],
+        _showTrace: false
+      })
     } else {
-      message.info('已在系统默认阅读器中打开原件')
+      chatMessages.value.push({
+        role: 'assistant',
+        content: '抱歉，回答出现异常: ' + (res.error || '未知错误')
+      })
     }
+  } catch (e) {
+    chatMessages.value.push({
+      role: 'assistant',
+      content: '网络异常: ' + e.message
+    })
+  } finally {
+    chatLoading.value = false
+    nextTick(() => {
+      if (chatMsgRef.value) chatMsgRef.value.scrollTop = chatMsgRef.value.scrollHeight
+    })
   }
 }
 
-// 暴露外部联动 API
+function toggleTrace() {
+  showTrace.value = !showTrace.value
+  chatMessages.value.forEach(m => { m._showTrace = showTrace.value })
+}
+
+function renderMarkdown(text) {
+  if (!text) return ''
+  try { return marked.parse(text) } catch { return text }
+}
+
+// Expose methods for parent
 defineExpose({
-  selectBook,
-  jumpToPage
+  jumpToPage(page) { currentPage.value = page },
+  selectBook(bookId) { loadBook(bookId) }
 })
 </script>
 
 <style scoped>
-.parallel-reader-container {
+.parallel-reader {
   display: flex;
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: #f8fafc;
+  background: var(--color-bg);
   overflow: hidden;
+  position: relative;
 }
 
-/* 顶部工具栏 */
-.reader-toolbar {
-  height: 52px;
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+/* ==================== 极简顶栏 ==================== */
+.reader-top-bar {
+  height: var(--h-topbar);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  gap: 16px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  z-index: 10;
   flex-shrink: 0;
+  z-index: 10;
 }
 
-.toolbar-left {
+.top-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
+  gap: 16px;
   min-width: 0;
+  flex: 1;
 }
 
-.book-meta-chips {
+.back-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  color: var(--color-ink-muted);
+  transition: all 0.15s;
+}
+
+.back-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-accent);
+}
+
+.back-arrow {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.back-label {
   font-size: 12px;
-  color: #64748b;
-  white-space: nowrap;
-}
-
-.toolbar-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.page-navigator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.page-label {
-  font-size: 12px;
-  color: #64748b;
   font-weight: 500;
 }
 
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* 对照分栏布局 */
-.parallel-split-layout {
-  display: flex;
-  flex: 1;
-  height: calc(100% - 52px);
-  overflow: hidden;
-  position: relative;
-}
-
-/* 比例控制 */
-.parallel-split-layout.split-equal .original-pane {
-  flex: 1;
-}
-.parallel-split-layout.split-equal .extracted-pane {
-  flex: 1;
-}
-
-.parallel-split-layout.split-pdf .original-pane {
-  flex: 1.4;
-}
-.parallel-split-layout.split-pdf .extracted-pane {
-  flex: 0.8;
-}
-
-.parallel-split-layout.split-text .original-pane {
-  flex: 0.8;
-}
-.parallel-split-layout.split-text .extracted-pane {
-  flex: 1.4;
-}
-
-.split-divider {
-  width: 14px;
-  background: #f1f5f9;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-left: 1px solid #e2e8f0;
-  border-right: 1px solid #e2e8f0;
-  position: relative;
-  user-select: none;
-}
-
-.divider-line {
-  width: 1px;
-  height: 100%;
-  background: #cbd5e1;
-}
-
-.divider-badge {
-  position: absolute;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 4px 2px;
-  border-radius: 4px;
-  writing-mode: vertical-rl;
-  letter-spacing: 2px;
-}
-
-/* 分栏通用 */
-.pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.pane-header {
-  height: 40px;
-  padding: 0 16px;
-  background: #fafaf9;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-
-.pane-title {
+.book-breadcrumb {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.pane-badge {
   font-size: 12px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 6px;
+  color: var(--color-ink-muted);
 }
 
-.pdf-badge {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-}
-
-.text-badge {
-  background: #fefce8;
-  color: #b45309;
-  border: 1px solid #fef08a;
-}
-
-.pane-subtitle {
-  font-size: 12px;
-  color: #64748b;
-  max-width: 280px;
+.crumb-book {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-ink);
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 200px;
 }
 
-.pane-content {
+.crumb-sep {
+  color: var(--color-ink-faint);
+}
+
+.crumb-page {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-info);
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* 跳页器 */
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+
+.page-jump-label {
+  font-size: 12px;
+  color: var(--color-ink-faint);
+  margin-right: 2px;
+}
+
+.page-total {
+  font-family: var(--font-mono);
+  color: var(--color-ink-faint);
+}
+
+/* 分割比例切换 */
+.split-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-ink-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  transition: all 0.15s;
+}
+
+.split-toggle:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.split-icon {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* 伴读按钮 */
+.ask-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ask-btn:hover {
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2);
+  transform: translateY(-1px);
+}
+
+.ask-btn.active {
+  background: linear-gradient(135deg, #b45309, #d97706);
+  border-color: #b45309;
+  color: #ffffff;
+}
+
+.ask-icon {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ==================== 主体对照区 ==================== */
+.reader-body {
+  display: flex;
   flex: 1;
-  height: calc(100% - 40px);
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
 
-.pane-placeholder, .pane-loading {
+.split-equal .original-pane { flex: 1; }
+.split-equal .text-pane { flex: 1; }
+.split-pdf .original-pane { flex: 1.5; }
+.split-pdf .text-pane { flex: 1; }
+.split-text .original-pane { flex: 1; }
+.split-text .text-pane { flex: 1.5; }
+
+.pane-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-surface);
+  min-width: 320px;
+}
+
+.pane-label {
+  height: 30px;
+  padding: 0 14px;
+  background: var(--color-bg-warm);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.label-text {
+  flex: 1;
+}
+
+.label-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 6px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.pdf-dot { background: var(--color-info); }
+.text-dot { background: var(--color-accent); }
+
+/* 面板标签上的说明入口 */
+.label-hint {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-deep);
+  color: var(--color-ink-faint);
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.label-hint:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 段落切分质量提示 */
+.seg-notice {
+  display: flex;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  background: var(--color-accent-soft);
+  border: 1px solid #fde68a;
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md);
+}
+
+.seg-notice-icon {
+  font-size: 14px;
+  color: var(--color-accent);
+  flex-shrink: 0;
+  line-height: 1.5;
+}
+
+.seg-notice-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: 3px;
+}
+
+.seg-notice-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-ink-muted);
+}
+
+.empty-sub {
+  font-size: 11px;
+  color: var(--color-ink-faint);
+  opacity: 0.8;
+}
+
+.load-more-end {
+  font-size: 11px;
+  color: var(--color-ink-faint);
+  text-align: center;
+  padding: 10px 0 4px;
+}
+
+.pane-control-page {
+  display: flex;
+  gap: 4px;
+}
+
+.page-arrow {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--color-ink-muted);
+  transition: all 0.1s;
+}
+
+.page-arrow:hover:not(.disabled) {
+  background: var(--color-surface);
+  color: var(--color-accent);
+}
+
+.page-arrow.disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pane-canvas {
+  flex: 1;
+  height: calc(100% - 30px);
+  overflow: hidden;
+  position: relative;
+}
+
+.empty-pane {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #94a3b8;
-  font-size: 13px;
-  gap: 12px;
+  gap: 10px;
+  color: var(--color-ink-faint);
 }
 
-/* PDF iframe */
-.pdf-iframe {
+.empty-mark {
+  font-size: 28px;
+  opacity: 0.4;
+}
+
+.empty-text {
+  font-size: 12px;
+  color: var(--color-ink-faint);
+}
+
+.pdf-frame {
   width: 100%;
   height: 100%;
   border: none;
   background: #525659;
 }
 
-/* 文字滚动列表 */
-.text-scroll-container {
-  overflow-y: auto;
-  padding: 16px 20px;
-  background: #f8fafc;
+/* 中间分割线 */
+.split-divider {
+  width: 6px;
+  background: var(--color-bg-warm);
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.paragraphs-list {
+.divider-grip {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--color-border-deep);
+}
+
+/* 文字滚动区 */
+.text-scroll {
+  overflow-y: auto;
+  height: 100%;
+  padding: 16px 20px;
+  background: var(--color-bg);
+}
+
+.paragraphs-flow {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 800px;
+  gap: 10px;
+  max-width: 760px;
   margin: 0 auto;
 }
 
 .para-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 14px 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s ease;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  transition: all 0.15s;
 }
 
 .para-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+  border-color: var(--color-border-deep);
+  box-shadow: var(--shadow-sm);
 }
 
 .para-card.highlighted {
-  border-color: #f59e0b;
-  background: #fffdfa;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 2px rgba(180, 83, 9, 0.1);
 }
 
-.para-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.para-page-badge {
-  font-size: 11px;
-  font-weight: 600;
-  color: #2563eb;
-  background: #eff6ff;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.para-page-badge:hover {
-  background: #dbeafe;
-  text-decoration: underline;
-}
-
-.para-index-tag, .para-length-tag {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.para-actions {
-  margin-left: auto;
+.para-meta {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 6px;
 }
 
-.para-text-content {
+.para-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.para-page {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-info);
+  background: var(--color-info-soft);
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.para-len {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-ink-faint);
+}
+
+.para-text {
+  font-family: var(--font-display);
   font-size: 14px;
-  line-height: 1.75;
-  color: #1e293b;
-  text-align: justify;
+  line-height: 1.85;
+  color: var(--color-ink);
   letter-spacing: 0.2px;
-  word-break: break-word;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.load-more-bar {
+.para-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.load-more {
   text-align: center;
-  padding: 16px 0;
+  padding: 10px 0;
+}
+
+/* ==================== 右侧伴读面板 ==================== */
+.chat-slide-panel {
+  width: var(--w-chat-panel);
+  min-width: 320px;
+  max-width: 560px;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-shadow: -4px 0 16px rgba(28, 25, 23, 0.06);
+}
+
+.chat-panel-header {
+  height: 40px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.chat-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.title-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1.5px solid #f59e0b;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.header-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.chat-scope-bar {
+  padding: 6px 14px;
+  background: var(--color-accent-soft);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-accent);
+}
+
+.scope-indicator {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.scope-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 聊天消息流 */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 32px;
+  gap: 8px;
+}
+
+.chat-empty-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  border: 2px solid #f59e0b;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.chat-empty-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.chat-empty-hint {
+  font-size: 11px;
+  color: var(--color-ink-faint);
+  line-height: 1.5;
+  max-width: 240px;
+}
+
+.chat-quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.quick-tag {
+  cursor: pointer !important;
+}
+
+.quick-tag:hover {
+  border-color: #f59e0b !important;
+  background: #fffbeb !important;
+}
+
+/* 消息气泡 */
+.chat-msg {
+  display: flex;
+}
+
+.chat-msg.user {
+  justify-content: flex-end;
+}
+
+.msg-bubble {
+  max-width: 90%;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.user-bubble {
+  background: linear-gradient(135deg, #92400e, #b45309);
+  color: #ffffff;
+  padding: 9px 14px;
+  border-radius: 14px 14px 3px 14px;
+}
+
+.assistant-bubble {
+  background: var(--color-bg-warm);
+  border: 1px solid var(--color-border);
+  padding: 10px 14px;
+  border-radius: 14px 14px 14px 3px;
+}
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.msg-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 1.5px solid #f59e0b;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.msg-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.msg-text {
+  color: var(--color-ink-soft);
+}
+
+/* 思维链 */
+.msg-trace {
+  margin-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  padding-top: 6px;
+}
+
+.trace-toggle {
+  font-size: 12px;
+  color: var(--color-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trace-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trace-row {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+  line-height: 1.4;
+}
+
+.trace-num {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-deep);
+  color: var(--color-ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* 思考中 */
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.thinking-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: dot-bounce 1.4s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+.thinking-span {
+  font-size: 12px;
+  color: var(--color-ink-muted);
+  font-style: italic;
+}
+
+/* 输入区 */
+.chat-input-zone {
+  padding: 10px 12px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+}
+
+.input-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.input-keyhint {
+  font-size: 10px;
+  color: var(--color-ink-faint);
+}
+
+/* 面板滑入动画 */
+.slide-panel-enter-active,
+.slide-panel-leave-active {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+
+.slide-panel-enter-from,
+.slide-panel-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.slide-panel-enter-to,
+.slide-panel-leave-from {
+  transform: translateX(0);
+  opacity: 1;
 }
 </style>

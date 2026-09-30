@@ -52,7 +52,9 @@ export function registerInquiryHandlers() {
   })
   ipcMain.handle('sessions:create', async (_event, payload) => {
     try {
-      return { success: true, data: inquiryService.createSession(payload) }
+      const question = payload?.question || '新会话'
+      const scope = payload?.scope || {}
+      return { success: true, data: inquiryService.createSession(question, scope) }
     } catch (err) {
       return { success: false, error: err.message }
     }

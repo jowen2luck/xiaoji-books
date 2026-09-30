@@ -89,3 +89,9 @@ $RECYCLE.BIN/
 
 # === 例外规则：保留目录占位符 ===
 !data/**/.gitkeep
+
+# === 临时目录与本地专属运行脚本 ===
+tmp/
+temp/
+run_ocr_batch.bat
+run_ocr_hidden.vbs
